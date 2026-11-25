@@ -127,3 +127,109 @@ Added 22 new unit test assertions across `backend/tests/unit/` (bringing unit su
 
 - `testcontainers.postgres` logs a deprecation warning recommending `testcontainers.community.postgres` in newer 4.x releases.
 - Zero blocking bugs found; escalation strikes used: `0/2`.
+
+---
+
+## Batch 2: Core Geospatial & Routing POCs (`T-003` & `T-004`)
+
+**QA Engineer:** `qa-engineer`  
+**Merged Source Branches:**
+- `T-004` (`dev-routing`): `swarm-dev-routing-cb7850ef` @ `6b7571d7`
+- `T-003` (`dev-snapping`): `swarm-dev-snapping-19222c8d` @ `cb8258bd`
+
+### Summary
+
+| Check | Command | Result | Details |
+|---|---|---|---|
+| Backend Lint (`T-003` + `T-004`) | `PYTHONPATH=. backend/.venv/bin/ruff check app tests/poc/test_routing_poc.py tests/poc/test_snapping_poc.py` | **PASS** | `All checks passed!` |
+| Backend Typecheck (`strict=true`) | `PYTHONPATH=. backend/.venv/bin/mypy app tests/poc/test_routing_poc.py tests/poc/test_snapping_poc.py` | **PASS** | `Success: no issues found in 29 source files` (after fixing 11 test-file strict annotations in `test_snapping_poc.py`; 0 errors in `app/`) |
+| Full Unit Regression Suite | `PYTHONPATH=. backend/.venv/bin/pytest -v -m "not integration"` | **PASS** | `107 passed, 16 deselected in 30.40s` (`15` T-004 + `30` T-003 + `62` Batch 1) |
+| T-003 Synthetic Benchmark CLI | `PYTHONPATH=. backend/.venv/bin/python -m app.domain.geo.cli --input tests/fixtures/geo --in-memory --labels-json tests/fixtures/geo/labels.json --pairs "5:5,10:10,20:20,20:10,30:20"` | **PASS** | All 15 Israel fixtures (incl. 5,000-pt stress track, 5,409 raw pts) across all 5 threshold pairs; p95 latency `9.62–34.66 ms` (`<< 30,000 ms` target) |
+| PostGIS/pgRouting Testcontainers Suite (`T-003` + `T-004`) | `PYTHONPATH=. backend/.venv/bin/pytest -v -m integration tests/poc/test_routing_poc.py tests/poc/test_snapping_poc.py` | **BLOCKED (Approval Timeout)** | Sandboxed run blocked by `/var/run/docker.sock` `PermissionError`; unsandboxed retry timed out waiting 60s for user approval and was not retried per permission policy. All `12` integration tests (`7` T-004 incl. cross-POC + `5` T-003) are authored, linted, and strict-mypy-verified for immediate execution once approved. |
+
+---
+
+### Batch 2 — T-003 Verification (POC 1: Node Snapping, Point Reduction & Geometry Quality)
+
+#### 1. Independent Audit & QA Test Additions (`backend/tests/poc/test_snapping_poc.py`)
+- Verified zero file overlap with `T-004` (`backend/app/domain/geo/`, `backend/tests/poc/test_snapping_poc.py`, `backend/tests/fixtures/geo/`, no `backend/tests/poc/__init__.py`) and zero edits to shared files (`pyproject.toml`, `0001_poc_foundation.py`, `conftest.py`).
+- Audited `snapping.py` lock order (`pg_advisory_xact_lock(0x4F4E545241434B)` → `nodes` (`ST_DWithin(geom::geography, ...)` + `ORDER BY ST_Distance(...), id ASC`, seeing same-tx inserts) → `edges` (`ST_MakeLine` + `ST_Length(geom::geography)`, unordered reuse via `ON CONFLICT (LEAST(source,target), GREATEST(source,target)) DO NOTHING` preserving `geom`/`length_m`/`initial_difficulty`, no self-loops, no cross-segment bridging) → `tracks` (`ON CONFLICT (id) DO NOTHING`) → `graph_metadata(revision)` strictly last), savepoint rollback on `DEGENERATE_GEOMETRY`, and `defusedxml` XXE/billion-laughs protection.
+- Cleaned up 11 strict `mypy` type annotations in `test_snapping_poc.py` integration tests (`Generator` fixture return type, explicit scalar casts).
+- **Added 3 QA unit tests + 1 QA PostGIS integration test** (total: **30 unit passed**, **5 integration authored**):
+  - `test_qa_ac64_exact_radius_boundary_and_nearest_beats_lower_id`: verifies exact radius boundary (`dist == radius` snaps, `dist == radius + 0.5m` does not) and that a closer higher-`id` node (5 m) beats a farther lower-`id` node (15 m) inside radius.
+  - `test_qa_ac94_fingerprint_order_and_6dp_precision_boundaries`: verifies reversed point order changes `normalized_fingerprint` and 6-decimal rounding boundaries (`32.6000001` vs `32.6000004` equal; `32.6010010` distinct).
+  - `test_qa_ac53_gpx_only_mode_kml_limits_and_mixed_degenerate_segment`: verifies `allowed_formats=frozenset({"gpx"})` rejects KML (`UNSUPPORTED_FORMAT`), KML point limit raises `TOO_MANY_POINTS`, and GPX with one 1-point degenerate `<trkseg>` alongside a valid `<trkseg>` retains the valid segment.
+  - `test_integration_qa_ac64_nearest_vs_id_boundary_kml_and_duplicate_track` (`@pytest.mark.integration`): verifies nearest-beats-lower-id, 19.5 m inside vs 21.0 m outside 20 m radius, KML Israel lat/lon bounds in PostGIS, and duplicate track `ON CONFLICT DO NOTHING` + 100% edge reuse.
+
+#### 2. Synthetic Snapping Benchmark Metrics (`AC-65`, `AC-96`, 15 Israel Fixtures, 5,409 Raw Points)
+
+Executed via `python -m app.domain.geo.cli --input tests/fixtures/geo --in-memory --labels-json tests/fixtures/geo/labels.json --pairs "5:5,10:10,20:20,20:10,30:20"`:
+
+| Pair (`red/snap` m) | Raw Pts | Reduced Pts | Final Nodes | Final Edges | Max Spacing (m) | P95 Spacing (m) | Max Dev (m) | P95 Dev (m) | False Joins | Missed Joins | Redundant Edges | Route Quality | P95 Latency (ms) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `5/5` | 5,409 | 5,277 | 5,253 | 5,247 | 100.1 | 8.1 | 5.0 | 0.0 | 1 | 0 | 0 | 1.000 | 34.66 |
+| `10/10` | 5,409 | 2,732 | 2,705 | 2,699 | 100.1 | 16.1 | 8.0 | 0.1 | 1 | 0 | 0 | 0.999 | 13.51 |
+| `20/20` | 5,409 | 1,850 | 1,806 | 1,799 | 100.1 | 25.1 | 18.7 | 0.1 | 14 | 0 | 0 | 1.000 | 10.37 |
+| `20/10` | 5,409 | 1,850 | 1,825 | 1,817 | 100.1 | 25.1 | 14.2 | 0.1 | 1 | 0 | 0 | 0.999 | 12.56 |
+| `30/20` | 5,409 | 1,393 | 1,362 | 1,353 | 100.1 | 39.9 | 18.8 | 0.2 | 8 | 0 | 0 | 0.998 | 9.62 |
+
+*Key Trade-off Finding (`AC-65` / `AC-96`):* At `20/20 m`, parallel trails spaced 15 m apart merge (`FJ=14`), whereas decoupling reduction and snap radius (`20/10 m`) cuts node/edge count by ~66% while reducing false joins back down to `FJ=1` (overpass/underpass crossing only, which is expected without 3D/z-level snapping).
+
+#### 3. Acceptance Criteria Coverage (`T-003`)
+
+| AC | Scope Verified | Status |
+|---|---|---|
+| `AC-44` | GPX + KML (`LineString` & `gx:Track`) Israel axis order (`lat ~32.6, lon ~35.0`), endpoint preservation across `5/10/20/30 m`, `.twl` and corrupt files skipped in batch scan without aborting | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-53` | Empty, malformed XML, XXE, billion-laughs, `.txt`, `.twl`, 1-pt, identical 2-pt, out-of-range lat/lon, size & point limits, `allowed_formats={'gpx'}`, stateless recovery | **PASS** (Unit) |
+| `AC-54` | 2 km multi-segment `<trkseg>` gap & multi-`<trk>` separation preserved with 0 bridging edges | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-64` | Inside/on/outside radius, nearest beats lower-id, equidistant `id ASC` tie-break, same-tx visibility, reverse edge reuse preserving `initial_difficulty`, self-loop skip, atomic rollback on degenerate geometry | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-65` | `(5,5), (10,10), (20,20), (20,10), (30,20)` m across 15 labeled fixtures (sparse, dense, switchbacks, parallel, overpass, reverse, no-ele, multi-segment, 5,000-pt); metrics & trade-offs recorded | **PASS** (Synthetic in-memory; PostGIS benchmark test authored, blocked on Docker approval timeout) |
+| `AC-94` | Raw `file_sha256` vs canonical 6-decimal `normalized_fingerprint` (`-0.0 -> 0.0`, ignores metadata/ele/namespaces/whitespace, sensitive to order, 6dp boundary, and segment splits) | **PASS** (Unit) |
+| `AC-96` | Full synthetic benchmark table + reusable `python -m app.domain.geo.cli` ready for `T-028` real legacy archive | **PASS** (Synthetic Phase 1; PostGIS run pending Docker approval, real archive in `T-028`) |
+
+---
+
+### Batch 2 — T-004 Verification (POC 2: Exact Full-Graph pgRouting & RoutingProvider Benchmark)
+
+#### 1. Independent Audit & QA Test Additions (`backend/tests/poc/test_routing_poc.py`)
+- Verified zero file overlap with `T-003` (`backend/app/integrations/routing/`, `backend/tests/poc/test_routing_poc.py`, no `backend/tests/poc/__init__.py`) and zero edits to shared files.
+- Audited `graph_router.py`:
+  - `NEAREST_NODE_SQL` uses `ST_DWithin(n.geom::geography, ...)` + `n.geom::geography <-> ...` + `distance_m ASC, n.id ASC` (hitting `ix_nodes_geom_geog`).
+  - `build_shortest_path_sql` generates exact full-graph `pgr_dijkstra` / `pgr_bdDijkstra` with `directed := false`, `length_m::double precision` (`distance`) or `1.0::double precision` (`hops`), zero bounding-box predicates (`AC-78`), zero difficulty in inner cost/`WHERE` (`AC-30`), and `ST_Reverse(e.geom)` when `p.node = e.target`.
+  - `calculate_leg` runs all DB reads in a single short `REPEATABLE READ READ ONLY` transaction and releases the DB connection **before** any external HTTP call (`AC-62`), handles all 5 hybrid branches (`connected`, `entry_equals_exit`, `disconnected`, `no_entry_fallback`, `entry_no_exit_fallback`), verifies section continuity, and returns zero partial route on provider or continuity error (`AC-29`).
+- Audited `providers.py` & `cli.py`:
+  - Bounded timeouts, exponential-backoff retries ONLY on transient `5xx` / `TimeoutException` / `TransportError`, non-retryable `429`/`401`/`403`/`400`, zero API key exposure in `__repr__`, logs, exception messages, or `__context__` (exception raised outside `except` block).
+  - GraphHopper profile mapping (`driving-car -> car`, `cycling-mountain -> mtb`) and CLI external snap-gap telemetry verified.
+- **Added 2 QA unit tests + 2 QA PostGIS/pgRouting integration tests** (total: **15 unit passed**, **7 integration authored**):
+  - `test_qa_ors_and_graphhopper_error_classification_retry_exhaustion_and_redaction`: verifies `400`/`401`/`403`/`429` non-retryability on both ORS and GraphHopper, `502` retry exhaustion + exponential backoff `[0.1, 0.2]`, `httpx.ConnectError` retry exhaustion with `exc.__context__ is None` and zero secret leakage, and GraphHopper malformed payloads (empty paths, non-JSON, out-of-range coords).
+  - `test_qa_calculate_leg_continuity_and_mid_faults_across_branches`: verifies `RouteContinuityError` rejection on `connected` (`access->network[0]`) and `disconnected` (`access->connector`) branches, and `AC-29` mid-calculation provider failure on `connected` (exit `429`) and `entry_no_exit_fallback` (fallback `503`) with zero partial route.
+  - `test_integration_qa_ac25_exit_far_hops_vs_distance_and_ac30_all_modes` (`@pytest.mark.integration`): verifies asymmetric `CLOSE` entry + `FAR` exit (`AC-25`), `distance` vs `hops` path divergence across both `pgr_dijkstra` and `pgr_bdDijkstra`, and `AC-30` difficulty neutrality across all 4 `(algorithm, cost_mode)` combinations.
+  - `test_integration_qa_cross_poc_snapping_to_routing_end_to_end` (`@pytest.mark.integration`): ingests forward + reverse Israel GPX tracks via `T-003` (`ingest_track_transaction`) and immediately routes in reverse via `T-004` (`calculate_leg` + `pgr_bdDijkstra`), verifying schema interoperability, `ST_Reverse` orientation, preserved `display_level=2`, and `0.0 m` continuity gaps.
+
+#### 2. Acceptance Criteria Coverage (`T-004`)
+
+| AC | Scope Verified | Status |
+|---|---|---|
+| `AC-24` | Connected hybrid leg (access + network + exit), reversed edge orientation, segment difficulty & elevation propagation, continuity `<= tolerance` | **PASS** (Unit; PostGIS/pgRouting integration authored, blocked on Docker approval timeout) |
+| `AC-25` | `CLOSE` → `FAR` expansion on both entry and exit sides + deterministic `id ASC` tie-breaking | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-26` | No entry within `FAR` → full external `cycling-mountain` fallback Start→Finish | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-27` | Entry found, no exit within `FAR` → continuous Start→Entry driving access + Entry→Finish fallback | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-28` | Disconnected components → continuous Start→Entry + `driving-car` connector + Exit→Finish | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-29` | Provider `429`/`503`/timeout/empty-geometry/continuity-gap raises structured error with zero partial route; `429` never retried; secrets never leaked | **PASS** (Unit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-30` | Difficulty never in inner pgRouting SQL cost or `WHERE`; changing difficulty `1 -> 3` keeps identical path across `distance`/`hops` and `pgr_dijkstra`/`pgr_bdDijkstra` | **PASS** (Unit SQL audit; PostGIS integration authored, blocked on Docker approval timeout) |
+| `AC-62` | Single `REPEATABLE READ READ ONLY` tx closed before external HTTP calls; concurrent write/rollback snapshot-isolation benchmark (`benchmark_concurrent_reads_during_writes`) | **PASS** (Unit lifecycle check; live PostGIS concurrent-write + `EXPLAIN ANALYZE` / p50 / p95 benchmark authored, blocked on Docker approval timeout) |
+| `AC-78` | Zero bbox pruning in SQL; deterministic optimal-detour-outside-bbox fixture (`seed_outside_bbox_fixture`) tested under `distance` & `hops` and both algorithms | **PASS** (Unit SQL audit; PostGIS/pgRouting integration authored, blocked on Docker approval timeout) |
+
+#### 3. Exact Reproduction Command for Pending Real PostGIS/pgRouting Integration Run
+
+Run once Docker access is approved (executes all `12` Batch 2 Testcontainers integration tests against `pgrouting/pgrouting:16-3.5-3.7`, including `EXPLAIN (ANALYZE, BUFFERS)`, 1x/5x/10x `pgr_dijkstra` vs `pgr_bdDijkstra` parity/p50/p95 benchmarks, AC-62 concurrent reads during writes, and all 5 PostGIS snapping benchmark pairs):
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/pytest -v -m integration tests/poc/test_routing_poc.py tests/poc/test_snapping_poc.py
+```
+
+### Batch 2 Defect & Escalation Summary
+
+- Production defects found in `T-003` (`app/domain/geo/`) or `T-004` (`app/integrations/routing/`): **0**.
+- Test-file strict-mypy issues fixed directly by QA in `backend/tests/poc/test_snapping_poc.py`: **11** (0 errors remaining across 29 files).
+- Escalation strikes used: **`0/2`** for `dev-snapping`, **`0/2`** for `dev-routing`.

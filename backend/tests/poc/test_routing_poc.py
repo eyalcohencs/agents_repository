@@ -41,7 +41,9 @@ from app.integrations.routing.models import (
     ExternalRouteResult,
     RouteContinuityError,
     RouteSegment,
+    RoutingAlgorithm,
     RoutingConfig,
+    RoutingCostMode,
     RoutingProviderError,
     geodesic_distance_m,
 )
@@ -683,6 +685,220 @@ def test_benchmark_helpers_and_cli_smoke(
     assert report["records"][0]["destination_snap_gap_m"] == 0.0
 
 
+def test_qa_ors_and_graphhopper_error_classification_retry_exhaustion_and_redaction(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """QA audit: 4xx/429 non-retryable, 5xx/ConnectError retry backoff & exhaustion, no leaks."""
+    origin = Coordinate(lat=32.6000, lng=35.0000)
+    dest = Coordinate(lat=32.6100, lng=35.0200)
+
+    # 1. Non-retryable HTTP statuses (400, 401, 403, 429) on both ORS and GraphHopper
+    for status_code, expected_code in (
+        (400, "PROVIDER_CLIENT_ERROR"),
+        (401, "AUTH_ERROR"),
+        (403, "AUTH_ERROR"),
+        (429, "RATE_LIMITED"),
+    ):
+        ors_calls = 0
+        gh_calls = 0
+        secret_ors = f"ors-secret-{status_code}"
+        secret_gh = f"gh-secret-{status_code}"
+
+        def make_handler(code: int, counter_box: list[int]) -> Any:
+            def _handler(request: httpx.Request) -> httpx.Response:
+                counter_box[0] += 1
+                return httpx.Response(code, json={"error": f"err-{code}"})
+
+            return _handler
+
+        ors_box = [ors_calls]
+        gh_box = [gh_calls]
+        ors = OpenRouteServiceProvider(
+            api_key=secret_ors,
+            client=httpx.Client(transport=httpx.MockTransport(make_handler(status_code, ors_box))),
+            max_retries=2,
+            sleep_fn=lambda _: None,
+        )
+        gh = GraphHopperProvider(
+            api_key=secret_gh,
+            client=httpx.Client(transport=httpx.MockTransport(make_handler(status_code, gh_box))),
+            max_retries=2,
+            sleep_fn=lambda _: None,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            with pytest.raises(RoutingProviderError) as ors_exc:
+                ors.route(origin, dest, profile="driving-car")
+            with pytest.raises(RoutingProviderError) as gh_exc:
+                gh.route(origin, dest, profile="driving-car")
+
+        assert ors_box[0] == 1
+        assert gh_box[0] == 1
+        assert ors_exc.value.code == expected_code
+        assert ors_exc.value.status_code == status_code
+        assert ors_exc.value.retryable is False
+        assert gh_exc.value.code == expected_code
+        assert gh_exc.value.status_code == status_code
+        assert gh_exc.value.retryable is False
+        assert secret_ors not in str(ors_exc.value)
+        assert secret_gh not in str(gh_exc.value)
+        assert secret_ors not in caplog.text
+        assert secret_gh not in caplog.text
+
+    # 2. 502 retry exhaustion with exponential backoff [0.1, 0.2] (total 3 attempts)
+    sleeps: list[float] = []
+    attempts_502 = 0
+
+    def always_502(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts_502
+        attempts_502 += 1
+        return httpx.Response(502, text="Bad Gateway")
+
+    ors_502 = OpenRouteServiceProvider(
+        api_key="ors-secret-502",
+        client=httpx.Client(transport=httpx.MockTransport(always_502)),
+        max_retries=2,
+        retry_backoff_s=0.1,
+        sleep_fn=sleeps.append,
+    )
+    with pytest.raises(RoutingProviderError) as exc_502:
+        ors_502.route(origin, dest, profile="driving-car")
+    assert attempts_502 == 3
+    assert sleeps == pytest.approx([0.1, 0.2])
+    assert exc_502.value.code == "PROVIDER_UNAVAILABLE"
+    assert exc_502.value.status_code == 502
+    assert exc_502.value.retryable is True
+
+    # 3. Transport/ConnectError retry exhaustion with secret redaction on GraphHopper
+    gh_secret_net = "gh-secret-connect-err-123"
+    net_attempts = 0
+
+    def always_connect_err(request: httpx.Request) -> httpx.Response:
+        nonlocal net_attempts
+        net_attempts += 1
+        raise httpx.ConnectError(f"failed connecting to {request.url}")
+
+    gh_net = GraphHopperProvider(
+        api_key=gh_secret_net,
+        client=httpx.Client(transport=httpx.MockTransport(always_connect_err)),
+        max_retries=2,
+        retry_backoff_s=0.0,
+        sleep_fn=lambda _: None,
+    )
+    with pytest.raises(RoutingProviderError) as net_exc:
+        gh_net.route(origin, dest, profile="cycling-mountain")
+    assert net_attempts == 3
+    assert net_exc.value.code == "PROVIDER_NETWORK_ERROR"
+    assert net_exc.value.retryable is True
+    assert net_exc.value.__context__ is None
+    assert gh_secret_net not in str(net_exc.value)
+
+    # 4. GraphHopper malformed payloads: empty paths, invalid JSON, out-of-range coords
+    for payload, expected_err in (
+        (httpx.Response(200, json={"paths": []}), "EMPTY_GEOMETRY"),
+        (httpx.Response(200, text="not-json"), "INVALID_RESPONSE"),
+        (
+            httpx.Response(
+                200,
+                json={"paths": [{"points": {"coordinates": [[35.0, 99.0], [35.1, 32.6]]}}]},
+            ),
+            "INVALID_RESPONSE",
+        ),
+    ):
+        gh_bad = GraphHopperProvider(
+            api_key="gh-key-bad",
+            client=httpx.Client(transport=httpx.MockTransport(lambda _r, resp=payload: resp)),
+            sleep_fn=lambda _: None,
+        )
+        with pytest.raises(RoutingProviderError) as bad_exc:
+            gh_bad.route(origin, dest, profile="driving-car")
+        assert bad_exc.value.code == expected_err
+        assert bad_exc.value.retryable is False
+
+
+def test_qa_calculate_leg_continuity_and_mid_faults_across_branches() -> None:
+    """QA audit: continuity rejection and zero partial route across connected & disconnected."""
+    origin = Coordinate(lat=32.6000, lng=35.0000)
+    dest = Coordinate(lat=32.6200, lng=35.0300)
+    entry_row = {"id": 10, "lat": 32.6010, "lng": 35.0020, "ele": 150.0, "distance_m": 210.0}
+    exit_row = {"id": 20, "lat": 32.6190, "lng": 35.0280, "ele": 220.0, "distance_m": 220.0}
+    connected_path_rows: list[dict[str, Any]] = [
+        {
+            "seq": 1,
+            "node": 10,
+            "edge": 101,
+            "cost": 1200.0,
+            "agg_cost": 0.0,
+            "edge_source": 10,
+            "edge_target": 20,
+            "initial_difficulty": 2,
+            "source_ele": 150.0,
+            "target_ele": 220.0,
+            "oriented_geojson": json.dumps(
+                {"type": "LineString", "coordinates": [[35.0020, 32.6010], [35.0280, 32.6190]]}
+            ),
+        },
+        {
+            "seq": 2,
+            "node": 20,
+            "edge": -1,
+            "cost": 0.0,
+            "agg_cost": 1200.0,
+            "edge_source": None,
+            "edge_target": None,
+            "initial_difficulty": None,
+            "source_ele": None,
+            "target_ele": None,
+            "oriented_geojson": None,
+        },
+    ]
+
+    # Connected branch: access->network[0] gap exceeds tolerance
+    db_gap_conn = _FakeDBEngine(
+        nearest_responses=[entry_row, exit_row],
+        path_rows=connected_path_rows,
+    )
+    with pytest.raises(RouteContinuityError) as conn_gap_exc:
+        calculate_leg(
+            db_gap_conn,  # type: ignore[arg-type]
+            FakeRoutingProvider(fault="continuity_gap", fail_on_call=1),
+            origin,
+            dest,
+            config=RoutingConfig(continuity_tolerance_m=150.0),
+        )
+    assert conn_gap_exc.value.between_sections == "access->network[0]"
+
+    # Connected branch: exit leg fails with 429 after access succeeded -> zero partial route
+    db_fault_conn = _FakeDBEngine(
+        nearest_responses=[entry_row, exit_row],
+        path_rows=connected_path_rows,
+    )
+    prov_fault_conn = FakeRoutingProvider(fault="429", fail_on_call=2)
+    with pytest.raises(RoutingProviderError) as exit_fault_exc:
+        calculate_leg(db_fault_conn, prov_fault_conn, origin, dest)  # type: ignore[arg-type]
+    assert exit_fault_exc.value.status_code == 429
+    assert len(prov_fault_conn.calls) == 2
+
+    # Disconnected branch: access->connector continuity gap rejected
+    db_gap_disc = _FakeDBEngine(nearest_responses=[entry_row, exit_row], path_rows=[])
+    with pytest.raises(RouteContinuityError) as disc_gap_exc:
+        calculate_leg(
+            db_gap_disc,  # type: ignore[arg-type]
+            FakeRoutingProvider(fault="continuity_gap", fail_on_call=1),
+            origin,
+            dest,
+        )
+    assert disc_gap_exc.value.between_sections == "access->connector"
+
+    # Entry-no-exit branch: fallback fails after access succeeded -> zero partial route
+    db_fault_ne = _FakeDBEngine(nearest_responses=[entry_row, None, None])
+    prov_fault_ne = FakeRoutingProvider(fault="503", fail_on_call=2)
+    with pytest.raises(RoutingProviderError) as ne_exc:
+        calculate_leg(db_fault_ne, prov_fault_ne, origin, dest)  # type: ignore[arg-type]
+    assert ne_exc.value.status_code == 503
+    assert len(prov_fault_ne.calls) == 2
+
+
 # ---------------------------------------------------------------------------
 # Integration Tests (Real PostGIS + pgRouting via Testcontainers)
 # ---------------------------------------------------------------------------
@@ -1015,3 +1231,136 @@ def test_integration_ac62_concurrent_reads_during_writes_and_scale_benchmark(
     assert conc.reads_completed >= 3
     assert conc.reader_errors == ()
     assert conc.partial_snapshot_violations == 0
+
+
+@pytest.mark.integration
+def test_integration_qa_ac25_exit_far_hops_vs_distance_and_ac30_all_modes(
+    routing_db_engine: Engine,
+) -> None:
+    """QA integration: asymmetric CLOSE/FAR exit, hops vs distance divergence, AC-30 all modes."""
+    _reset_graph(routing_db_engine)
+    # Build two competing paths between n_start and n_end:
+    # - Path A: 2 hops via far north apex (~4.3 km)
+    # - Path B: 3 hops nearly straight (~1.9 km)
+    n_start_c = Coordinate(lat=32.6000, lng=35.0000, ele=100.0)
+    n_end_c = Coordinate(lat=32.6000, lng=35.0200, ele=120.0)
+    # Path A: 2 hops, long detour (~4.3 km)
+    apex_far_c = Coordinate(lat=32.6180, lng=35.0100, ele=250.0)
+    # Path B: 3 hops, nearly straight (~1.9 km)
+    mid1_c = Coordinate(lat=32.6001, lng=35.0067, ele=105.0)
+    mid2_c = Coordinate(lat=32.6001, lng=35.0133, ele=110.0)
+
+    with routing_db_engine.begin() as conn:
+        n_start = _insert_node(conn, n_start_c)
+        n_end = _insert_node(conn, n_end_c)
+        n_apex = _insert_node(conn, apex_far_c)
+        n_m1 = _insert_node(conn, mid1_c)
+        n_m2 = _insert_node(conn, mid2_c)
+        e_a1 = _insert_edge(conn, n_start, n_apex, difficulty=1)
+        e_a2 = _insert_edge(conn, n_apex, n_end, difficulty=1)
+        e_b1 = _insert_edge(conn, n_start, n_m1, difficulty=1)
+        e_b2 = _insert_edge(conn, n_m1, n_m2, difficulty=1)
+        e_b3 = _insert_edge(conn, n_m2, n_end, difficulty=1)
+        conn.execute(text("ANALYZE nodes"))
+        conn.execute(text("ANALYZE edges"))
+
+    # Asymmetric CLOSE entry + FAR exit (destination ~4.4 km east of n_end)
+    leg_far_exit = calculate_leg(
+        routing_db_engine,
+        FakeRoutingProvider(),
+        origin=Coordinate(lat=32.5995, lng=34.9995),
+        destination=Coordinate(lat=32.6000, lng=35.0670),
+        config=RoutingConfig(close_radius_m=2000.0, far_radius_m=10000.0, cost_mode="distance"),
+    )
+    assert leg_far_exit.branch == "connected"
+    assert leg_far_exit.entry_node is not None and leg_far_exit.entry_node.search_tier == "close"
+    assert leg_far_exit.exit_node is not None and leg_far_exit.exit_node.search_tier == "far"
+    assert leg_far_exit.exit_node.node_id == n_end
+    assert 2000.0 < leg_far_exit.exit_node.distance_m <= 10000.0
+
+    # Verify distance vs hops diverge across BOTH pgr_dijkstra and pgr_bdDijkstra
+    for algo in ("pgr_dijkstra", "pgr_bdDijkstra"):
+        with routing_db_engine.connect() as conn:
+            dist_path = find_shortest_path(
+                conn, n_start, n_end, cost_mode="distance", algorithm=algo
+            )
+            hops_path = find_shortest_path(
+                conn, n_start, n_end, cost_mode="hops", algorithm=algo
+            )
+        assert dist_path is not None and dist_path.edge_ids == (e_b1, e_b2, e_b3)
+        assert hops_path is not None and hops_path.edge_ids == (e_a1, e_a2)
+        assert hops_path.total_cost == pytest.approx(2.0)
+
+    # AC-30: raise difficulty on BOTH winning paths to 3; geometry must stay identical in all modes
+    with routing_db_engine.begin() as conn:
+        conn.execute(
+            text("UPDATE edges SET initial_difficulty = 3 WHERE id = ANY(CAST(:ids AS bigint[]))"),
+            {"ids": [e_a1, e_a2, e_b1, e_b2, e_b3]},
+        )
+
+    algos: tuple[RoutingAlgorithm, ...] = ("pgr_dijkstra", "pgr_bdDijkstra")
+    mode_cases: tuple[tuple[RoutingCostMode, tuple[int, ...]], ...] = (
+        ("distance", (e_b1, e_b2, e_b3)),
+        ("hops", (e_a1, e_a2)),
+    )
+    for algo in algos:
+        for mode, expected_edges in mode_cases:
+            leg = calculate_leg(
+                routing_db_engine,
+                FakeRoutingProvider(),
+                origin=Coordinate(lat=32.5995, lng=34.9995),
+                destination=Coordinate(lat=32.6005, lng=35.0205),
+                config=RoutingConfig(cost_mode=mode, algorithm=algo),
+            )
+            net_segs = [s for s in leg.segments if s.source == "network"]
+            assert tuple(s.edge_id for s in net_segs) == expected_edges
+            assert all(s.display_level == 3 for s in net_segs)
+
+
+@pytest.mark.integration
+def test_integration_qa_cross_poc_snapping_to_routing_end_to_end(
+    routing_db_engine: Engine,
+) -> None:
+    """Cross-POC QA test: ingest real GPX/KML via T-003 and route over it via T-004."""
+    from app.domain.geo.models import SnappingConfig
+    from app.domain.geo.parser import parse_track_file
+    from app.domain.geo.snapping import ingest_track_transaction
+
+    _reset_graph(routing_db_engine)
+    fixtures_dir = Path(__file__).resolve().parents[1] / "fixtures" / "geo"
+    fwd_track = parse_track_file(
+        "01_israel_base_forward.gpx",
+        (fixtures_dir / "01_israel_base_forward.gpx").read_bytes(),
+    )
+    rev_track = parse_track_file(
+        "02_israel_base_reverse.gpx",
+        (fixtures_dir / "02_israel_base_reverse.gpx").read_bytes(),
+    )
+
+    cfg = SnappingConfig(20.0, 20.0)
+    with routing_db_engine.begin() as conn:
+        res_fwd = ingest_track_transaction(conn, fwd_track, cfg, difficulty=2)
+        res_rev = ingest_track_transaction(conn, rev_track, cfg, difficulty=3)
+        conn.execute(text("ANALYZE nodes"))
+        conn.execute(text("ANALYZE edges"))
+
+    assert res_fwd.edges_created > 0
+    assert res_rev.edges_created == 0
+    assert res_rev.edges_reused == res_fwd.edges_created
+
+    # Route in reverse (from track end back to track start) -> exercises ST_Reverse on snapped edges
+    start_pt = fwd_track.segments[0].points[-1]
+    end_pt = fwd_track.segments[0].points[0]
+    leg = calculate_leg(
+        routing_db_engine,
+        FakeRoutingProvider(),
+        origin=Coordinate(lat=start_pt.lat - 0.0002, lng=start_pt.lon),
+        destination=Coordinate(lat=end_pt.lat + 0.0002, lng=end_pt.lon),
+        config=RoutingConfig(cost_mode="distance", algorithm="pgr_bdDijkstra"),
+    )
+    assert leg.branch == "connected"
+    assert leg.graph_revision == 2
+    net_segs = [s for s in leg.segments if s.source == "network"]
+    assert len(net_segs) == res_fwd.edges_created
+    assert all(s.display_level == 2 for s in net_segs)  # preserved original difficulty=2
+    assert all(g <= 0.01 for g in leg.continuity_gaps_m)

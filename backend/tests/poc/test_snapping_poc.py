@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -477,6 +478,73 @@ def test_metrics_helpers_and_all_five_threshold_pairs_synthetic_benchmark(
     assert len(saved["results"]) == 5
 
 
+def test_qa_ac64_exact_radius_boundary_and_nearest_beats_lower_id() -> None:
+    """QA audit (AC-64): inside/on/outside radius and nearest candidate beats lower id."""
+    graph = InMemoryGraph()
+    origin = TrackPoint(32.600000, 35.000000, 100.0)
+    # Lower ID (1) is 15m away; higher ID (2) is 5m away. Both inside 20m radius.
+    farther_low_id = graph.add_node(_move_point(origin.lat, origin.lon, 90.0, 15.0))
+    closer_high_id = graph.add_node(_move_point(origin.lat, origin.lon, 90.0, 5.0))
+    assert farther_low_id < closer_high_id
+    assert graph.find_nearest_node(origin, radius_m=20.0) == closer_high_id
+
+    # Exact radius boundary: point at exact geodesic distance from a node
+    boundary_graph = InMemoryGraph()
+    anchor = TrackPoint(32.610000, 35.010000)
+    anchor_id = boundary_graph.add_node(anchor)
+    exact_pt = _move_point(anchor.lat, anchor.lon, 0.0, 20.0)
+    exact_dist = geodesic_distance_m(anchor.lat, anchor.lon, exact_pt.lat, exact_pt.lon)
+    # On boundary (radius == exact_dist) -> snaps; just outside (radius < exact_dist) -> None
+    assert boundary_graph.find_nearest_node(exact_pt, radius_m=exact_dist) == anchor_id
+    assert boundary_graph.find_nearest_node(exact_pt, radius_m=exact_dist - 0.5) is None
+    assert boundary_graph.find_nearest_node(exact_pt, radius_m=exact_dist + 0.5) == anchor_id
+
+
+def test_qa_ac94_fingerprint_order_and_6dp_precision_boundaries() -> None:
+    """QA audit (AC-94): order sensitivity and 6-decimal rounding boundaries."""
+    p1 = TrackPoint(32.6000001, 35.0000001)
+    p2 = TrackPoint(32.6010004, 35.0010004)
+    p1_same_6dp = TrackPoint(32.6000004, 35.0000004)
+    p2_same_6dp = TrackPoint(32.6010001, 35.0010001)
+    p2_diff_6dp = TrackPoint(32.6010010, 35.0010001)
+
+    fp_fwd = compute_normalized_fingerprint([TrackSegment(0, (p1, p2))])
+    fp_same_6dp = compute_normalized_fingerprint([TrackSegment(0, (p1_same_6dp, p2_same_6dp))])
+    fp_rev = compute_normalized_fingerprint([TrackSegment(0, (p2, p1))])
+    fp_diff_6dp = compute_normalized_fingerprint([TrackSegment(0, (p1, p2_diff_6dp))])
+
+    assert fp_fwd == fp_same_6dp
+    assert fp_fwd != fp_rev
+    assert fp_fwd != fp_diff_6dp
+
+
+def test_qa_ac53_gpx_only_mode_kml_limits_and_mixed_degenerate_segment() -> None:
+    """QA audit (AC-53): allowed_formats={'gpx'}, KML point/size limits, partial valid segments."""
+    kml_bytes = (FIXTURES_DIR / "13_israel_kml_valid.kml").read_bytes()
+    with pytest.raises(GeoParseError) as fmt_exc:
+        parse_track_file("trail.kml", kml_bytes, allowed_formats=frozenset({"gpx"}))
+    assert fmt_exc.value.code == ERROR_CODE_UNSUPPORTED_FORMAT
+
+    with pytest.raises(GeoParseError) as kml_pts_exc:
+        parse_kml(kml_bytes, max_upload_points=3)
+    assert kml_pts_exc.value.code == ERROR_CODE_TOO_MANY_POINTS
+
+    # GPX with one 1-point degenerate segment + one valid 2-point segment keeps the valid segment
+    mixed_gpx = (
+        b'<?xml version="1.0"?>'
+        b'<gpx version="1.1"><trk>'
+        b'<trkseg><trkpt lat="32.600000" lon="35.000000"/></trkseg>'
+        b'<trkseg>'
+        b'<trkpt lat="32.610000" lon="35.010000"/>'
+        b'<trkpt lat="32.611000" lon="35.011000"/>'
+        b"</trkseg></trk></gpx>"
+    )
+    parsed = parse_gpx(mixed_gpx)
+    assert len(parsed.segments) == 1
+    assert parsed.segments[0].index == 0
+    assert len(parsed.segments[0].points) == 2
+
+
 # ---------------------------------------------------------------------------
 # Integration Tests (Real PostGIS + Alembic 0001_poc_foundation.py)
 # ---------------------------------------------------------------------------
@@ -489,7 +557,7 @@ def _prepare_clean_db(engine: Engine) -> None:
 
 
 @pytest.fixture(scope="module")
-def migrated_engine(postgres_db_url: str) -> Engine:
+def migrated_engine(postgres_db_url: str) -> Generator[Engine, None, None]:
     cfg = build_alembic_config(postgres_db_url)
     command.upgrade(cfg, "head")
     engine = create_engine(postgres_db_url, pool_pre_ping=True)
@@ -512,21 +580,25 @@ def test_integration_postgis_snapping_radius_ties_same_tx_and_reverse_reuse(
 
     # Seed equidistant west (lower id) and east (higher id)
     with migrated_engine.begin() as conn:
-        w_id = conn.execute(
-            text(
-                "INSERT INTO nodes (geom, ele) VALUES "
-                "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
-            ),
-            {"lon": west.lon, "lat": west.lat},
-        ).scalar_one()
-        e_id = conn.execute(
-            text(
-                "INSERT INTO nodes (geom, ele) VALUES "
-                "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
-            ),
-            {"lon": east.lon, "lat": east.lat},
-        ).scalar_one()
-        assert int(w_id) < int(e_id)
+        w_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO nodes (geom, ele) VALUES "
+                    "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
+                ),
+                {"lon": west.lon, "lat": west.lat},
+            ).scalar_one()
+        )
+        e_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO nodes (geom, ele) VALUES "
+                    "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
+                ),
+                {"lon": east.lon, "lat": east.lat},
+            ).scalar_one()
+        )
+        assert w_id < e_id
 
     # Ingest track hitting tie-break midpoint, same-tx node revisit, and self-loop skip
     track = _make_parsed_track([[origin, outside, near_outside, east]])
@@ -538,7 +610,7 @@ def test_integration_postgis_snapping_radius_ties_same_tx_and_reverse_reuse(
             difficulty=2,
         )
 
-    assert res.snapped_segments[0][0] == int(w_id)
+    assert res.snapped_segments[0][0] == w_id
     assert res.nodes_created == 1
     assert res.self_loops_skipped == 1
     assert res.edges_created == 2
@@ -560,33 +632,37 @@ def test_integration_postgis_snapping_radius_ties_same_tx_and_reverse_reuse(
     assert rev_res.graph_revision == 2
 
     with migrated_engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                """
-                SELECT
-                    initial_difficulty,
-                    ST_NPoints(geom) AS npts,
-                    ABS(length_m - ST_Length(geom::geography)) AS len_diff,
-                    (source = target) AS is_self_loop
-                FROM edges
-                """
+        rows = (
+            conn.execute(
+                text(
+                    """
+                    SELECT
+                        initial_difficulty,
+                        ST_NPoints(geom) AS npts,
+                        ABS(length_m - ST_Length(geom::geography)) AS len_diff,
+                        (source = target) AS is_self_loop
+                    FROM edges
+                    """
+                )
             )
-        ).fetchall()
+            .mappings()
+            .all()
+        )
         assert len(rows) == 2
-        for diff, npts, len_diff, is_self_loop in rows:
-            assert int(diff) == 2
-            assert int(npts) == 2
-            assert float(len_diff) < 0.01
-            assert not bool(is_self_loop)
+        for row in rows:
+            assert int(row["initial_difficulty"]) == 2
+            assert int(row["npts"]) == 2
+            assert float(row["len_diff"]) < 0.01
+            assert not bool(row["is_self_loop"])
 
     # Verify no-elevation track inserts NULL ele
     no_ele = parse_gpx((FIXTURES_DIR / "11_israel_no_elevation.gpx").read_bytes())
     with migrated_engine.begin() as conn:
         ingest_track_transaction(conn, no_ele, SnappingConfig(20.0, 20.0))
-        null_ele_count = conn.execute(
-            text("SELECT COUNT(*) FROM nodes WHERE ele IS NULL")
-        ).scalar_one()
-        assert int(null_ele_count) >= 2
+        null_ele_count = int(
+            conn.execute(text("SELECT COUNT(*) FROM nodes WHERE ele IS NULL")).scalar_one()
+        )
+        assert null_ele_count >= 2
 
 
 @pytest.mark.integration
@@ -600,13 +676,15 @@ def test_integration_postgis_multisegment_gap_and_degenerate_rollback(
     with migrated_engine.begin() as conn:
         res = ingest_track_transaction(conn, multi, SnappingConfig(20.0, 20.0))
         assert len(res.snapped_segments) == 2
-        max_len = conn.execute(text("SELECT MAX(length_m) FROM edges")).scalar_one()
-        num_geoms = conn.execute(
-            text("SELECT ST_NumGeometries(normalized_geom) FROM tracks WHERE id = :id"),
-            {"id": multi.normalized_fingerprint},
-        ).scalar_one()
-        assert float(max_len) < 500.0
-        assert int(num_geoms) == 2
+        max_len = float(conn.execute(text("SELECT MAX(length_m) FROM edges")).scalar_one())
+        num_geoms = int(
+            conn.execute(
+                text("SELECT ST_NumGeometries(normalized_geom) FROM tracks WHERE id = :id"),
+                {"id": multi.normalized_fingerprint},
+            ).scalar_one()
+        )
+        assert max_len < 500.0
+        assert num_geoms == 2
 
     # Degenerate track collapsing into single node rolls back savepoint cleanly
     p1 = TrackPoint(32.655000, 35.055000)
@@ -642,19 +720,111 @@ def test_integration_postgis_advisory_lock_blocks_concurrent_writer(
         ingest_track_transaction(conn1, track, SnappingConfig(20.0, 20.0))
         # While conn1 transaction is still open, conn2 cannot acquire the same advisory lock
         with migrated_engine.connect() as conn2:
-            acquired = conn2.execute(
-                text("SELECT pg_try_advisory_xact_lock(:key)"),
-                {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
-            ).scalar_one()
+            acquired = bool(
+                conn2.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:key)"),
+                    {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
+                ).scalar_one()
+            )
             assert acquired is False
 
     # After conn1 commits, conn2 acquires the lock cleanly
     with migrated_engine.begin() as conn2:
-        acquired_after = conn2.execute(
-            text("SELECT pg_try_advisory_xact_lock(:key)"),
-            {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
-        ).scalar_one()
+        acquired_after = bool(
+            conn2.execute(
+                text("SELECT pg_try_advisory_xact_lock(:key)"),
+                {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
+            ).scalar_one()
+        )
         assert acquired_after is True
+
+
+@pytest.mark.integration
+def test_integration_qa_ac64_nearest_vs_id_boundary_kml_and_duplicate_track(
+    migrated_engine: Engine,
+) -> None:
+    """QA integration: nearest beats lower id, inside/outside boundary, KML axes, duplicate id."""
+    _prepare_clean_db(migrated_engine)
+
+    origin = TrackPoint(32.600000, 35.000000, 150.0)
+    farther_pt = _move_point(origin.lat, origin.lon, 90.0, 15.0)
+    closer_pt = _move_point(origin.lat, origin.lon, 90.0, 5.0)
+    inside_19m = _move_point(origin.lat, origin.lon, 0.0, 19.5)
+    outside_21m = _move_point(origin.lat, origin.lon, 0.0, 21.0)
+    far_end = _move_point(origin.lat, origin.lon, 180.0, 120.0)
+
+    with migrated_engine.begin() as conn:
+        low_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO nodes (geom, ele) VALUES "
+                    "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
+                ),
+                {"lon": farther_pt.lon, "lat": farther_pt.lat},
+            ).scalar_one()
+        )
+        high_id = int(
+            conn.execute(
+                text(
+                    "INSERT INTO nodes (geom, ele) VALUES "
+                    "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
+                ),
+                {"lon": closer_pt.lon, "lat": closer_pt.lat},
+            ).scalar_one()
+        )
+        assert low_id < high_id
+
+    # Point at origin snaps to closer high_id (5m) rather than farther low_id (15m).
+    # Point at inside_19m (19.5m from origin, ~20.1m from closer_pt) vs outside_21m:
+    # Test explicitly against anchor=far_end with inside (19.5m) & outside (21.0m):
+    in_from_end = _move_point(far_end.lat, far_end.lon, 90.0, 19.5)
+    out_from_end = _move_point(far_end.lat, far_end.lon, 270.0, 21.0)
+    _ = (inside_19m, outside_21m)
+
+    t1 = _make_parsed_track([[origin, far_end]])
+    with migrated_engine.begin() as conn:
+        r1 = ingest_track_transaction(conn, t1, SnappingConfig(0.0, 20.0), difficulty=1)
+    assert r1.snapped_segments[0][0] == high_id
+    far_end_id = r1.snapped_segments[0][1]
+
+    t2 = _make_parsed_track([[in_from_end, out_from_end]])
+    with migrated_engine.begin() as conn:
+        r2 = ingest_track_transaction(conn, t2, SnappingConfig(0.0, 20.0), difficulty=2)
+    assert r2.snapped_segments[0][0] == far_end_id  # 19.5m snapped inside 20m radius
+    assert r2.snapped_segments[0][1] != far_end_id  # 21.0m created new node outside radius
+    assert r2.nodes_created == 1
+
+    # Re-ingest identical KML tracks: verify Israel ST_Y/ST_X and tracks ON CONFLICT DO NOTHING
+    kml_track = parse_track_file(
+        "13_israel_kml_valid.kml",
+        (FIXTURES_DIR / "13_israel_kml_valid.kml").read_bytes(),
+    )
+    with migrated_engine.begin() as conn:
+        rk1 = ingest_track_transaction(conn, kml_track, SnappingConfig(20.0, 20.0), difficulty=2)
+        rk2 = ingest_track_transaction(conn, kml_track, SnappingConfig(20.0, 20.0), difficulty=3)
+        track_rows = int(
+            conn.execute(
+                text("SELECT COUNT(*) FROM tracks WHERE id = :id"),
+                {"id": kml_track.normalized_fingerprint},
+            ).scalar_one()
+        )
+        bounds = (
+            conn.execute(
+                text(
+                    "SELECT MIN(ST_Y(geom)) AS min_lat, MAX(ST_Y(geom)) AS max_lat, "
+                    "MIN(ST_X(geom)) AS min_lon, MAX(ST_X(geom)) AS max_lon FROM nodes"
+                )
+            )
+            .mappings()
+            .one()
+        )
+
+    assert rk1.edges_created > 0
+    assert rk2.edges_created == 0
+    assert rk2.edges_reused == rk1.edges_created
+    assert track_rows == 1
+    assert 32.5 <= float(bounds["min_lat"]) <= float(bounds["max_lat"]) <= 32.9
+    assert 34.9 <= float(bounds["min_lon"]) <= float(bounds["max_lon"]) <= 35.2
 
 
 @pytest.mark.integration
