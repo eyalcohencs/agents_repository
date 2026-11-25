@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import heapq
 import math
 import threading
 import time
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -106,6 +108,27 @@ class ScaleBenchmarkResult:
     latency: LatencyStats
     pair_costs: tuple[float, ...]
     explain_plan: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AlgorithmParityReport:
+    """Comparison of a candidate algorithm's path costs against exact optimal reference costs.
+
+    Note (POC 2 finding): pgRouting 3.7 `pgr_bdDijkstra` can terminate slightly early on
+    near-symmetric undirected grids (returning a valid path within ~0.001% of optimum rather
+    than the strict global minimum). Keep `pgr_dijkstra` as the production exact baseline and
+    use this report to audit candidate algorithms honestly against an exact reference solver.
+    """
+
+    scale_label: str
+    cost_mode: RoutingCostMode
+    reference_algorithm: str
+    candidate_algorithm: RoutingAlgorithm
+    pair_count: int
+    exact_matches: int
+    suboptimal_pairs: int
+    max_abs_delta: float
+    max_rel_delta: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -464,6 +487,100 @@ def explain_nearest_node(
     finally:
         conn.execute(text(f"{set_prefix} enable_seqscan = {restore_val}"))
     return tuple(str(row[0]) for row in rows)
+
+
+def compute_reference_shortest_path_costs(
+    conn: Connection,
+    pairs: Sequence[tuple[int, int]],
+    *,
+    cost_mode: RoutingCostMode = "distance",
+) -> tuple[float, ...]:
+    """Compute independent exact undirected Dijkstra costs directly from `edges` in Python."""
+    if cost_mode not in ("distance", "hops"):
+        raise ValueError(f"Unsupported cost_mode: {cost_mode!r}")
+
+    edge_rows = conn.execute(
+        text(
+            "SELECT source::bigint, target::bigint, length_m::double precision "
+            "FROM edges"
+        )
+    ).fetchall()
+    adj: dict[int, list[tuple[int, float]]] = defaultdict(list)
+    for row in edge_rows:
+        src = int(row[0])
+        tgt = int(row[1])
+        weight = float(row[2]) if cost_mode == "distance" else 1.0
+        adj[src].append((tgt, weight))
+        adj[tgt].append((src, weight))
+
+    costs: list[float] = []
+    for start_id, end_id in pairs:
+        if start_id == end_id:
+            costs.append(0.0)
+            continue
+        dist: dict[int, float] = {start_id: 0.0}
+        pq: list[tuple[float, int]] = [(0.0, start_id)]
+        found: float | None = None
+        while pq:
+            cur_d, u = heapq.heappop(pq)
+            if cur_d > dist[u]:
+                continue
+            if u == end_id:
+                found = cur_d
+                break
+            for v, w in adj[u]:
+                nd = cur_d + w
+                if nd < dist.get(v, math.inf):
+                    dist[v] = nd
+                    heapq.heappush(pq, (nd, v))
+        if found is None:
+            raise RuntimeError(f"Reference solver found no path for ({start_id}, {end_id}).")
+        costs.append(found)
+
+    return tuple(costs)
+
+
+def compare_algorithm_parity(
+    reference_costs: Sequence[float],
+    candidate: ScaleBenchmarkResult,
+    *,
+    reference_algorithm: str = "exact_dijkstra",
+    rel_tol: float = 1e-9,
+    abs_tol: float = 1e-9,
+) -> AlgorithmParityReport:
+    """Measure exact-optimality parity of `candidate` against `reference_costs`."""
+    if len(reference_costs) != len(candidate.pair_costs):
+        raise ValueError("reference_costs and candidate.pair_costs must have equal length.")
+
+    exact_matches = 0
+    suboptimal_pairs = 0
+    max_abs_delta = 0.0
+    max_rel_delta = 0.0
+
+    for ref_cost, cand_cost in zip(reference_costs, candidate.pair_costs, strict=True):
+        delta = cand_cost - ref_cost
+        abs_delta = abs(delta)
+        rel_delta = abs_delta / max(abs(ref_cost), 1e-12)
+        if abs_delta > max_abs_delta:
+            max_abs_delta = abs_delta
+        if rel_delta > max_rel_delta:
+            max_rel_delta = rel_delta
+        if math.isclose(cand_cost, ref_cost, rel_tol=rel_tol, abs_tol=abs_tol):
+            exact_matches += 1
+        elif delta > 0:
+            suboptimal_pairs += 1
+
+    return AlgorithmParityReport(
+        scale_label=candidate.scale_label,
+        cost_mode=candidate.cost_mode,
+        reference_algorithm=reference_algorithm,
+        candidate_algorithm=candidate.algorithm,
+        pair_count=len(reference_costs),
+        exact_matches=exact_matches,
+        suboptimal_pairs=suboptimal_pairs,
+        max_abs_delta=max_abs_delta,
+        max_rel_delta=max_rel_delta,
+    )
 
 
 def benchmark_graph_scale(
