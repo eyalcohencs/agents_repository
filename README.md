@@ -68,16 +68,63 @@ Run checks, migrations, and tests from `backend/`:
 ```bash
 # Lint & strict typecheck
 ruff check .
-mypy app
+mypy app tests/poc/test_routing_poc.py tests/poc/test_snapping_poc.py
 
 # Apply database migrations (requires a running PostgreSQL instance matching DATABASE_URL)
 alembic upgrade head
 
-# Run unit tests (fast, no Docker required)
-pytest tests/unit
+# Run fast unit & non-integration tests (no Docker required)
+pytest -m "not integration"
 
-# Run full suite including Testcontainers PostGIS/pgRouting integration tests (requires Docker)
+# Run Testcontainers PostGIS/pgRouting integration tests only (requires Docker)
+pytest -m integration
+
+# Run full suite (unit + integration, requires Docker)
 pytest
+```
+
+### Batch 2 POC CLIs (`T-003` & `T-004`)
+
+Run from `backend/` with the virtualenv activated:
+
+#### 1. Node Snapping & Geometry Quality Benchmark (`T-003`)
+
+Evaluates GPX/KML parsing, geodesic point reduction, and node snapping across threshold pairs (`reduction_m:snap_m`), either in-memory or against a PostGIS database (`DATABASE_URL` env var is preferred over `--database-url` to avoid exposing credentials in process lists):
+
+```bash
+# In-memory synthetic benchmark over built-in Israel fixtures
+python -m app.domain.geo.cli \
+  --input tests/fixtures/geo \
+  --in-memory \
+  --labels-json tests/fixtures/geo/labels.json \
+  --pairs "5:5,10:10,20:20,20:10,30:20"
+
+# Against a PostGIS database (resets graph tables between pairs; optional JSON report)
+DATABASE_URL="postgresql+psycopg://ontrack:ontrack@localhost:5432/ontrack" \
+  python -m app.domain.geo.cli \
+  --input /path/to/tracks \
+  --reset-db \
+  --recursive \
+  --output-json /tmp/snapping-report.json
+```
+
+#### 2. External Routing Provider Comparison (`T-004`)
+
+Compares OpenRouteService (`ors`) and GraphHopper (`graphhopper`) — or an offline `fake` provider — over a JSON file of `{name, origin: {lat, lng}, destination: {lat, lng}, profiles?}` pairs, reporting latency percentiles, failure/rate-limit counts, and external snap gaps:
+
+```bash
+# Live ORS vs. GraphHopper comparison (API keys read from environment)
+ORS_API_KEY="<your-ors-key>" GRAPHHOPPER_API_KEY="<your-gh-key>" \
+  python -m app.integrations.routing.cli \
+  --input /path/to/pairs.json \
+  --providers ors,graphhopper \
+  --profiles driving-car,cycling-mountain \
+  --output-json /tmp/routing-comparison.json
+
+# Offline smoke run using FakeRoutingProvider
+python -m app.integrations.routing.cli \
+  --input /path/to/pairs.json \
+  --providers fake
 ```
 
 ## Frontend Development & Testing
