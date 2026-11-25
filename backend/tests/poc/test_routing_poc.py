@@ -460,6 +460,9 @@ def test_build_shortest_path_sql_exact_full_graph_and_difficulty_neutral() -> No
 
     assert "geom::geography" in NEAREST_NODE_SQL
     assert "ST_DWithin" in NEAREST_NODE_SQL
+    assert "n.geom::geography <->" in NEAREST_NODE_SQL
+    assert "CAST(:radius_m AS double precision)" in NEAREST_NODE_SQL
+    assert "distance_m ASC" not in NEAREST_NODE_SQL
     assert "n.id ASC" in NEAREST_NODE_SQL
 
 
@@ -977,7 +980,8 @@ def test_integration_ac62_concurrent_reads_during_writes_and_scale_benchmark(
     specs = (
         GraphScaleSpec(label="1x", rows=10, cols=10),
         GraphScaleSpec(label="5x", rows=22, cols=22),
-        GraphScaleSpec(label="10x", rows=32, cols=32),
+        # Realistic spatial extent (~22 km x 19 km) so a 2 km lookup is genuinely selective
+        GraphScaleSpec(label="10x", rows=40, cols=40, step_deg=0.005),
     )
 
     last_seeded = None
@@ -985,8 +989,18 @@ def test_integration_ac62_concurrent_reads_during_writes_and_scale_benchmark(
         with routing_db_engine.begin() as conn:
             seeded = seed_synthetic_grid_graph(conn, spec, truncate=True)
             last_seeded = seeded
-            knn_plan = explain_nearest_node(conn, Coordinate(lat=32.605, lng=35.005))
-            assert any("ix_nodes_geom_geog" in line for line in knn_plan)
+            unconstrained_plan = explain_nearest_node(conn, Coordinate(lat=32.605, lng=35.005))
+            assert len(unconstrained_plan) > 0
+            # Verify ix_nodes_geom_geog is planner-eligible at every scale (even 1-page 1x)
+            indexed_plan = explain_nearest_node(
+                conn,
+                Coordinate(lat=32.605, lng=35.005),
+                disable_seqscan=True,
+            )
+            assert any("ix_nodes_geom_geog" in line for line in indexed_plan)
+            # On realistic 10x graph, the unconstrained planner must naturally choose the index
+            if spec.label == "10x":
+                assert any("ix_nodes_geom_geog" in line for line in unconstrained_plan)
 
         results = benchmark_graph_scale(
             routing_db_engine,
