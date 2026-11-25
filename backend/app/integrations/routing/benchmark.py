@@ -643,7 +643,11 @@ def benchmark_concurrent_reads_during_writes(
     writer_started.wait(timeout=5.0)
 
     pair_idx = 0
-    while not writer_done.is_set() or len(reader_latencies) < max(3, len(pairs)):
+    min_read_attempts = max(3, len(pairs))
+    while (
+        not writer_done.is_set()
+        or (len(reader_latencies) + len(reader_errors)) < min_read_attempts
+    ):
         start_id, end_id = pairs[pair_idx % len(pairs)]
         pair_idx += 1
         started = time.perf_counter()

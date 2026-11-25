@@ -16,6 +16,7 @@ from app.integrations.routing.models import (
     Coordinate,
     RoutingProviderError,
     geodesic_distance_m,
+    validate_routing_profile,
 )
 from app.integrations.routing.protocol import RoutingProvider
 from app.integrations.routing.providers import (
@@ -87,9 +88,11 @@ def load_coordinate_pairs(path: Path) -> list[CoordinatePairSpec]:
 
         profiles: tuple[str, ...] | None = None
         if isinstance(item.get("profiles"), list):
-            profiles = tuple(str(p).strip() for p in item["profiles"] if str(p).strip())
+            profiles = tuple(
+                validate_routing_profile(str(p)) for p in item["profiles"] if str(p).strip()
+            )
         elif isinstance(item.get("profile"), str) and item["profile"].strip():
-            profiles = (item["profile"].strip(),)
+            profiles = (validate_routing_profile(item["profile"]),)
 
         pairs.append(
             CoordinatePairSpec(
@@ -311,7 +314,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     pairs = load_coordinate_pairs(args.input)
     provider_names = [p.strip() for p in args.providers.split(",") if p.strip()]
-    default_profiles = [p.strip() for p in args.profiles.split(",") if p.strip()]
+    default_profiles = [
+        validate_routing_profile(p) for p in args.profiles.split(",") if p.strip()
+    ]
 
     providers, secrets = _build_providers_from_env(
         provider_names,

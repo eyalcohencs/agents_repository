@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+import math
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -16,6 +19,7 @@ from app.integrations.routing.models import (
     ExternalRouteResult,
     RoutingProviderError,
     geodesic_distance_m,
+    validate_routing_profile,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,12 +36,85 @@ GRAPHHOPPER_PROFILE_MAP: dict[str, str] = {
 
 FaultKind = Literal["429", "503", "timeout", "empty_geometry", "continuity_gap"]
 
+_SECRET_QUERY_RE = re.compile(r"(?i)([?&](?:api_key|key|token)=)[^&\s\"']+")
+_LOCAL_HTTP_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _redact_query_secrets(value: str) -> str:
+    return _SECRET_QUERY_RE.sub(r"\1<redacted>", value)
+
+
+class _HttpxQuerySecretRedactingFilter(logging.Filter):
+    """Scrub query-string credentials (e.g. GraphHopper `?key=...`) from httpx/httpcore logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and "key=" in record.msg.lower():
+            record.msg = _redact_query_secrets(record.msg)
+        if record.args:
+            if isinstance(record.args, tuple):
+                redacted_args: list[Any] = []
+                for arg in record.args:
+                    if isinstance(arg, (str, httpx.URL)):
+                        as_str = str(arg)
+                        redacted_args.append(
+                            _redact_query_secrets(as_str) if "key=" in as_str.lower() else arg
+                        )
+                    else:
+                        redacted_args.append(arg)
+                record.args = tuple(redacted_args)
+            elif isinstance(record.args, dict):
+                record.args = {
+                    k: (
+                        _redact_query_secrets(str(v))
+                        if isinstance(v, (str, httpx.URL)) and "key=" in str(v).lower()
+                        else v
+                    )
+                    for k, v in record.args.items()
+                }
+        return True
+
+
+_HTTPX_REDACTING_FILTER = _HttpxQuerySecretRedactingFilter()
+
+
+def _install_httpx_secret_redaction_filter() -> None:
+    """Ensure httpx/httpcore loggers redact query-string API keys at all log levels."""
+    for logger_name in ("httpx", "httpcore"):
+        target_logger = logging.getLogger(logger_name)
+        if _HTTPX_REDACTING_FILTER not in target_logger.filters:
+            target_logger.addFilter(_HTTPX_REDACTING_FILTER)
+
+
+_install_httpx_secret_redaction_filter()
+
+
+def validate_provider_base_url(
+    base_url: str,
+    *,
+    allow_insecure_http: bool = False,
+) -> str:
+    """Validate provider base URL to prevent SSRF, embedded credentials, and cleartext keys."""
+    cleaned = base_url.strip().rstrip("/")
+    parsed = urlsplit(cleaned)
+    scheme = parsed.scheme.lower()
+    if scheme != "https" and not (
+        allow_insecure_http and scheme == "http" and parsed.hostname in _LOCAL_HTTP_HOSTS
+    ):
+        raise ValueError(
+            f"Provider base_url must use https scheme (got scheme={parsed.scheme!r})."
+        )
+    if not parsed.hostname:
+        raise ValueError("Provider base_url must include a non-empty hostname.")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Provider base_url must not contain embedded credentials.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("Provider base_url must not contain query parameters or fragments.")
+    return cleaned
+
 
 def map_graphhopper_profile(profile: str) -> str:
-    """Map canonical OnTrack/ORS profile names onto GraphHopper profile names."""
-    normalized = profile.strip()
-    if not normalized:
-        raise ValueError("Routing profile must be non-empty.")
+    """Map canonical OnTrack/ORS profile names onto validated GraphHopper profile names."""
+    normalized = validate_routing_profile(profile)
     return GRAPHHOPPER_PROFILE_MAP.get(normalized, normalized)
 
 
@@ -132,21 +209,26 @@ class _BaseHttpRoutingProvider:
         timeout_s: float = 10.0,
         max_retries: int = 2,
         retry_backoff_s: float = 0.25,
+        allow_insecure_http: bool = False,
         client: httpx.Client | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         cleaned_key = api_key.strip()
         if not cleaned_key:
             raise ValueError(f"{self.name} requires a non-empty API key.")
-        if timeout_s <= 0:
-            raise ValueError("timeout_s must be > 0.")
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("timeout_s must be finite and > 0.")
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0.")
-        if retry_backoff_s < 0:
-            raise ValueError("retry_backoff_s must be >= 0.")
+        if not math.isfinite(retry_backoff_s) or retry_backoff_s < 0:
+            raise ValueError("retry_backoff_s must be finite and >= 0.")
 
+        _install_httpx_secret_redaction_filter()
         self._api_key = cleaned_key
-        self._base_url = base_url.rstrip("/")
+        self._base_url = validate_provider_base_url(
+            base_url,
+            allow_insecure_http=allow_insecure_http,
+        )
         self._timeout_s = timeout_s
         self._max_retries = max_retries
         self._retry_backoff_s = retry_backoff_s
@@ -155,7 +237,10 @@ class _BaseHttpRoutingProvider:
         self._client = (
             client
             if client is not None
-            else httpx.Client(timeout=httpx.Timeout(timeout_s))
+            else httpx.Client(
+                timeout=httpx.Timeout(timeout_s),
+                follow_redirects=False,
+            )
         )
 
     def __repr__(self) -> str:
@@ -240,6 +325,23 @@ class _BaseHttpRoutingProvider:
                         "total_attempts": total_attempts,
                     },
                 )
+            except (httpx.HTTPError, httpx.InvalidURL):
+                logger.warning(
+                    "Routing provider non-retryable HTTP protocol error",
+                    extra={
+                        "provider": self.name,
+                        "profile": profile_label,
+                        "attempt": attempt + 1,
+                    },
+                )
+                last_error = RoutingProviderError(
+                    code="PROVIDER_CLIENT_ERROR",
+                    status_code=None,
+                    retryable=False,
+                    message=f"{self.name} HTTP protocol error while fetching route.",
+                    provider=self.name,
+                )
+                break
             else:
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
                 if 200 <= response.status_code < 300:
@@ -274,7 +376,8 @@ class _BaseHttpRoutingProvider:
                 self._sleep_fn(self._retry_backoff_s * (2**attempt))
 
         assert last_error is not None
-        raise last_error
+        last_error.__context__ = None
+        raise last_error from None
 
 
 class OpenRouteServiceProvider(_BaseHttpRoutingProvider):
@@ -290,6 +393,7 @@ class OpenRouteServiceProvider(_BaseHttpRoutingProvider):
         timeout_s: float = 10.0,
         max_retries: int = 2,
         retry_backoff_s: float = 0.25,
+        allow_insecure_http: bool = False,
         client: httpx.Client | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -299,6 +403,7 @@ class OpenRouteServiceProvider(_BaseHttpRoutingProvider):
             timeout_s=timeout_s,
             max_retries=max_retries,
             retry_backoff_s=retry_backoff_s,
+            allow_insecure_http=allow_insecure_http,
             client=client,
             sleep_fn=sleep_fn,
         )
@@ -310,9 +415,7 @@ class OpenRouteServiceProvider(_BaseHttpRoutingProvider):
         *,
         profile: str,
     ) -> ExternalRouteResult:
-        cleaned_profile = profile.strip()
-        if not cleaned_profile:
-            raise ValueError("Routing profile must be non-empty.")
+        cleaned_profile = validate_routing_profile(profile)
 
         url = f"{self._base_url}/v2/directions/{cleaned_profile}/geojson"
         headers = {
@@ -409,6 +512,7 @@ class GraphHopperProvider(_BaseHttpRoutingProvider):
         timeout_s: float = 10.0,
         max_retries: int = 2,
         retry_backoff_s: float = 0.25,
+        allow_insecure_http: bool = False,
         client: httpx.Client | None = None,
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -418,6 +522,7 @@ class GraphHopperProvider(_BaseHttpRoutingProvider):
             timeout_s=timeout_s,
             max_retries=max_retries,
             retry_backoff_s=retry_backoff_s,
+            allow_insecure_http=allow_insecure_http,
             client=client,
             sleep_fn=sleep_fn,
         )
