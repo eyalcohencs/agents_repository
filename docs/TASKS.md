@@ -181,7 +181,7 @@ flowchart TD
   - **POC / Approval Gate:** Gate 1 satisfied — `T-008` and `T-009` are now unblocked on product decisions
   - **Definition of Done:** All 13 Gate 1 rows confirmed in `PRD.md` §10.1. *(Done)*
 
-- [ ] **T-001: Repository Bootstrap, Docker Compose, Nginx & CI**
+- [x] **T-001: Repository Bootstrap, Docker Compose, Nginx & CI**
   - **Start Dependencies:** None
   - **Completion Dependencies:** None
   - **Owned Paths:** `docker-compose.yml`, `nginx/`, `.env.example`, `backend/pyproject.toml`, `backend/Dockerfile`, `frontend/package.json`, `.github/workflows/ci.yml`
@@ -191,7 +191,7 @@ flowchart TD
   - **POC / Approval Gate:** Verify `pgrouting/pgrouting` CPU architecture compatibility
   - **Definition of Done:** `docker compose up` boots cleanly; CI lint/typecheck/placeholder jobs pass.
 
-- [ ] **T-002: [Infrastructure Checkpoint] Database Extensions, Health, Public Config & Initial POC Schema**
+- [x] **T-002: [Infrastructure Checkpoint] Database Extensions, Health, Public Config & Initial POC Schema**
   - **Start Dependencies:** `T-001`
   - **Completion Dependencies:** `T-001`
   - **Owned Paths:** `backend/app/core/db.py`, `backend/app/core/config.py`, `backend/app/health/`, `backend/alembic/versions/0001_poc_foundation.py`
