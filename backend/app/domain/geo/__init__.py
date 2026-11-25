@@ -34,6 +34,7 @@ from app.domain.geo.parser import (
     parse_kml,
     parse_track_directory,
     parse_track_file,
+    parse_track_path,
 )
 from app.domain.geo.snapping import (
     GRAPH_WRITER_ADVISORY_LOCK_KEY,
@@ -72,6 +73,7 @@ __all__ = [
     "parse_kml",
     "parse_track_directory",
     "parse_track_file",
+    "parse_track_path",
     "point_to_segment_distance_m",
     "reduce_segment",
     "reduce_track",

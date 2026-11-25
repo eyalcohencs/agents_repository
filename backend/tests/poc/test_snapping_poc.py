@@ -7,7 +7,9 @@ PostGIS / Alembic integration tests are marked with `@pytest.mark.integration`.
 from __future__ import annotations
 
 import json
+import math
 import shutil
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -18,8 +20,10 @@ from sqlalchemy.engine import Engine
 
 from app.domain.geo.cli import (
     load_topology_expectations,
+    load_tracks_from_input,
     parse_threshold_pairs,
     run_benchmark,
+    sanitize_error_message,
 )
 from app.domain.geo.cli import main as cli_main
 from app.domain.geo.geodesy import (
@@ -478,6 +482,113 @@ def test_metrics_helpers_and_all_five_threshold_pairs_synthetic_benchmark(
 
 
 # ---------------------------------------------------------------------------
+# Security & Input Hardening (#16 Medium #4, Low #5; #17 Nits #1 & #4)
+# ---------------------------------------------------------------------------
+
+
+def test_directory_and_cli_reject_symlinks_without_reading(tmp_path: Path) -> None:
+    """Symlinks are rejected in parse_track_directory and load_tracks_from_input before read."""
+    target = tmp_path / "outside.gpx"
+    shutil.copy(FIXTURES_DIR / "01_israel_base_forward.gpx", target)
+
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    link = scan_dir / "linked.gpx"
+    link.symlink_to(target)
+    shutil.copy(FIXTURES_DIR / "04_israel_sparse.gpx", scan_dir / "regular.gpx")
+
+    parsed, errors = parse_track_directory(scan_dir)
+    assert [p.name for p, _ in parsed] == ["regular.gpx"]
+    assert len(errors) == 1
+    assert errors[0][0].name == "linked.gpx"
+    assert errors[0][1].code == ERROR_CODE_UNSUPPORTED_FORMAT
+
+    loaded_single, skipped_single = load_tracks_from_input(link)
+    assert loaded_single == []
+    assert len(skipped_single) == 1
+    assert skipped_single[0]["code"] == ERROR_CODE_UNSUPPORTED_FORMAT
+
+
+def test_directory_and_cli_reject_oversized_files_before_read_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Oversized files fail on stat().st_size BEFORE Path.read_bytes() is ever invoked."""
+    oversized = tmp_path / "huge.gpx"
+    # Create a sparse file larger than 1 MiB without allocating real disk blocks
+    with oversized.open("wb") as handle:
+        handle.seek(2 * 1024 * 1024)
+        handle.write(b"\0")
+
+    def _forbid_read_bytes(self: Path) -> bytes:
+        raise AssertionError(f"read_bytes() must not be called on oversized file {self}")
+
+    monkeypatch.setattr(Path, "read_bytes", _forbid_read_bytes)
+
+    parsed, errors = parse_track_directory(tmp_path, max_upload_mb=1)
+    assert parsed == []
+    assert len(errors) == 1
+    assert errors[0][1].code == ERROR_CODE_FILE_TOO_LARGE
+
+    loaded_single, skipped_single = load_tracks_from_input(oversized, max_upload_mb=1)
+    assert loaded_single == []
+    assert len(skipped_single) == 1
+    assert skipped_single[0]["code"] == ERROR_CODE_FILE_TOO_LARGE
+
+
+def test_unsupported_format_message_reflects_allowed_formats() -> None:
+    """Unsupported format message dynamically lists only the configured allowed_formats."""
+    with pytest.raises(GeoParseError) as exc_info:
+        parse_track_file(
+            "trail.kml",
+            b"<kml/>",
+            allowed_formats=frozenset({"gpx"}),
+        )
+    assert exc_info.value.code == ERROR_CODE_UNSUPPORTED_FORMAT
+    assert "Supported formats: GPX." in exc_info.value.message
+    assert "KML" not in exc_info.value.message
+
+
+@pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf, -1.0])
+def test_non_finite_and_negative_floats_rejected(bad_value: float) -> None:
+    """NaN, inf, -inf, and negative values are rejected in config, geodesy, and CLI."""
+    with pytest.raises(ValueError):
+        SnappingConfig(point_simplification_distance_m=bad_value)
+    with pytest.raises(ValueError):
+        SnappingConfig(node_snap_radius_m=bad_value)
+
+    seg = TrackSegment(0, (TrackPoint(32.6, 35.0), TrackPoint(32.61, 35.01)))
+    track = _make_parsed_track([[TrackPoint(32.6, 35.0), TrackPoint(32.61, 35.01)]])
+    with pytest.raises(ValueError):
+        reduce_segment(seg, bad_value)
+    with pytest.raises(ValueError):
+        reduce_track(track, bad_value)
+    with pytest.raises(ValueError):
+        parse_threshold_pairs(f"{bad_value}:10")
+
+
+def test_cli_redacts_database_dsn_credentials_in_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI sanitizes DSN passwords before writing error messages to stderr."""
+    secret = "s3cr3t_pg_pass"
+    dsn = f"postgresql+psycopg://ontrack:{secret}@127.0.0.1:1/ontrack"
+    assert secret not in sanitize_error_message(f"could not connect to {dsn}")
+    assert "***:***@" in sanitize_error_message(f"could not connect to {dsn}")
+
+    def _failing_run_benchmark(**kwargs: object) -> dict[str, object]:
+        raise RuntimeError(f"Connection failed for {dsn}")
+
+    monkeypatch.setenv("DATABASE_URL", dsn)
+    monkeypatch.setattr("app.domain.geo.cli.run_benchmark", _failing_run_benchmark)
+
+    exit_code = cli_main(["--input", str(FIXTURES_DIR)])
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert secret not in captured.err
+    assert "***:***@" in captured.err
+
+
+# ---------------------------------------------------------------------------
 # Integration Tests (Real PostGIS + Alembic 0001_poc_foundation.py)
 # ---------------------------------------------------------------------------
 
@@ -489,7 +600,7 @@ def _prepare_clean_db(engine: Engine) -> None:
 
 
 @pytest.fixture(scope="module")
-def migrated_engine(postgres_db_url: str) -> Engine:
+def migrated_engine(postgres_db_url: str) -> Generator[Engine, None, None]:
     cfg = build_alembic_config(postgres_db_url)
     command.upgrade(cfg, "head")
     engine = create_engine(postgres_db_url, pool_pre_ping=True)
@@ -512,21 +623,25 @@ def test_integration_postgis_snapping_radius_ties_same_tx_and_reverse_reuse(
 
     # Seed equidistant west (lower id) and east (higher id)
     with migrated_engine.begin() as conn:
-        w_id = conn.execute(
-            text(
-                "INSERT INTO nodes (geom, ele) VALUES "
-                "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
-            ),
-            {"lon": west.lon, "lat": west.lat},
-        ).scalar_one()
-        e_id = conn.execute(
-            text(
-                "INSERT INTO nodes (geom, ele) VALUES "
-                "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
-            ),
-            {"lon": east.lon, "lat": east.lat},
-        ).scalar_one()
-        assert int(w_id) < int(e_id)
+        w_id: int = int(
+            conn.execute(
+                text(
+                    "INSERT INTO nodes (geom, ele) VALUES "
+                    "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
+                ),
+                {"lon": west.lon, "lat": west.lat},
+            ).scalar_one()
+        )
+        e_id: int = int(
+            conn.execute(
+                text(
+                    "INSERT INTO nodes (geom, ele) VALUES "
+                    "(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326), 100.0) RETURNING id"
+                ),
+                {"lon": east.lon, "lat": east.lat},
+            ).scalar_one()
+        )
+        assert w_id < e_id
 
     # Ingest track hitting tie-break midpoint, same-tx node revisit, and self-loop skip
     track = _make_parsed_track([[origin, outside, near_outside, east]])
@@ -573,20 +688,22 @@ def test_integration_postgis_snapping_radius_ties_same_tx_and_reverse_reuse(
             )
         ).fetchall()
         assert len(rows) == 2
-        for diff, npts, len_diff, is_self_loop in rows:
-            assert int(diff) == 2
-            assert int(npts) == 2
-            assert float(len_diff) < 0.01
-            assert not bool(is_self_loop)
+        for row in rows:
+            assert int(row[0]) == 2
+            assert int(row[1]) == 2
+            assert float(row[2]) < 0.01
+            assert not bool(row[3])
 
     # Verify no-elevation track inserts NULL ele
     no_ele = parse_gpx((FIXTURES_DIR / "11_israel_no_elevation.gpx").read_bytes())
     with migrated_engine.begin() as conn:
         ingest_track_transaction(conn, no_ele, SnappingConfig(20.0, 20.0))
-        null_ele_count = conn.execute(
-            text("SELECT COUNT(*) FROM nodes WHERE ele IS NULL")
-        ).scalar_one()
-        assert int(null_ele_count) >= 2
+        null_ele_count: int = int(
+            conn.execute(
+                text("SELECT COUNT(*) FROM nodes WHERE ele IS NULL")
+            ).scalar_one()
+        )
+        assert null_ele_count >= 2
 
 
 @pytest.mark.integration
@@ -600,13 +717,17 @@ def test_integration_postgis_multisegment_gap_and_degenerate_rollback(
     with migrated_engine.begin() as conn:
         res = ingest_track_transaction(conn, multi, SnappingConfig(20.0, 20.0))
         assert len(res.snapped_segments) == 2
-        max_len = conn.execute(text("SELECT MAX(length_m) FROM edges")).scalar_one()
-        num_geoms = conn.execute(
-            text("SELECT ST_NumGeometries(normalized_geom) FROM tracks WHERE id = :id"),
-            {"id": multi.normalized_fingerprint},
-        ).scalar_one()
-        assert float(max_len) < 500.0
-        assert int(num_geoms) == 2
+        max_len: float = float(
+            conn.execute(text("SELECT MAX(length_m) FROM edges")).scalar_one()
+        )
+        num_geoms: int = int(
+            conn.execute(
+                text("SELECT ST_NumGeometries(normalized_geom) FROM tracks WHERE id = :id"),
+                {"id": multi.normalized_fingerprint},
+            ).scalar_one()
+        )
+        assert max_len < 500.0
+        assert num_geoms == 2
 
     # Degenerate track collapsing into single node rolls back savepoint cleanly
     p1 = TrackPoint(32.655000, 35.055000)
@@ -642,18 +763,22 @@ def test_integration_postgis_advisory_lock_blocks_concurrent_writer(
         ingest_track_transaction(conn1, track, SnappingConfig(20.0, 20.0))
         # While conn1 transaction is still open, conn2 cannot acquire the same advisory lock
         with migrated_engine.connect() as conn2:
-            acquired = conn2.execute(
-                text("SELECT pg_try_advisory_xact_lock(:key)"),
-                {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
-            ).scalar_one()
+            acquired: bool = bool(
+                conn2.execute(
+                    text("SELECT pg_try_advisory_xact_lock(:key)"),
+                    {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
+                ).scalar_one()
+            )
             assert acquired is False
 
     # After conn1 commits, conn2 acquires the lock cleanly
     with migrated_engine.begin() as conn2:
-        acquired_after = conn2.execute(
-            text("SELECT pg_try_advisory_xact_lock(:key)"),
-            {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
-        ).scalar_one()
+        acquired_after: bool = bool(
+            conn2.execute(
+                text("SELECT pg_try_advisory_xact_lock(:key)"),
+                {"key": GRAPH_WRITER_ADVISORY_LOCK_KEY},
+            ).scalar_one()
+        )
         assert acquired_after is True
 
 

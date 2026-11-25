@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
@@ -68,10 +69,15 @@ class SnappingConfig:
     max_upload_points: int = 50_000
 
     def __post_init__(self) -> None:
-        if self.point_simplification_distance_m < 0:
-            raise ValueError("point_simplification_distance_m must be non-negative.")
-        if self.node_snap_radius_m < 0:
-            raise ValueError("node_snap_radius_m must be non-negative.")
+        if (
+            not math.isfinite(self.point_simplification_distance_m)
+            or self.point_simplification_distance_m < 0
+        ):
+            raise ValueError(
+                "point_simplification_distance_m must be a finite non-negative number."
+            )
+        if not math.isfinite(self.node_snap_radius_m) or self.node_snap_radius_m < 0:
+            raise ValueError("node_snap_radius_m must be a finite non-negative number.")
         if self.default_difficulty not in (1, 2, 3):
             raise ValueError("default_difficulty must be 1, 2, or 3.")
         if self.max_upload_mb <= 0:

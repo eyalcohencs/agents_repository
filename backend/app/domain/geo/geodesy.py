@@ -86,8 +86,8 @@ def reduce_segment(segment: TrackSegment, min_distance_m: float) -> TrackSegment
     when their WGS84 geodesic distance from the previous retained point is at least
     `min_distance_m`.
     """
-    if min_distance_m < 0:
-        raise ValueError("min_distance_m must be non-negative.")
+    if not math.isfinite(min_distance_m) or min_distance_m < 0:
+        raise ValueError("min_distance_m must be a finite non-negative number.")
 
     pts = segment.points
     if len(pts) <= 2 or min_distance_m == 0:
@@ -110,8 +110,8 @@ def reduce_segment(segment: TrackSegment, min_distance_m: float) -> TrackSegment
 
 def reduce_track(track: ParsedTrack, min_distance_m: float) -> ReducedTrack:
     """Reduce every segment of a parsed track independently, preserving gaps and endpoints."""
-    if min_distance_m < 0:
-        raise ValueError("min_distance_m must be non-negative.")
+    if not math.isfinite(min_distance_m) or min_distance_m < 0:
+        raise ValueError("min_distance_m must be a finite non-negative number.")
 
     reduced_segments = tuple(
         reduce_segment(segment, min_distance_m) for segment in track.segments
