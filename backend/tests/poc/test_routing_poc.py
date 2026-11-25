@@ -16,9 +16,12 @@ from sqlalchemy.engine import Engine
 
 from app.integrations.routing.benchmark import (
     GraphScaleSpec,
+    ScaleBenchmarkResult,
     benchmark_concurrent_reads_during_writes,
     benchmark_graph_scale,
+    compare_algorithm_parity,
     compute_percentiles,
+    compute_reference_shortest_path_costs,
     explain_nearest_node,
     generate_grid_topology,
     seed_difficulty_neutrality_fixture,
@@ -815,6 +818,22 @@ def test_benchmark_helpers_and_cli_smoke(
     assert len(edges) == 4 * 4 + 3 * 5
     assert all(src != tgt and 1 <= diff <= 3 for src, tgt, diff in edges)
 
+    # Parity report detects exact matches and suboptimal candidate paths honestly
+    cand = ScaleBenchmarkResult(
+        scale_label="1x",
+        algorithm="pgr_bdDijkstra",
+        cost_mode="distance",
+        node_count=100,
+        edge_count=180,
+        latency=stats,
+        pair_costs=(3241.2238, 3272.9829),
+        explain_plan=("Seq Scan",),
+    )
+    parity = compare_algorithm_parity((3241.2238, 3272.9589), cand)
+    assert parity.exact_matches == 1
+    assert parity.suboptimal_pairs == 1
+    assert parity.max_abs_delta == pytest.approx(0.024, abs=1e-4)
+
     # CLI end-to-end with fake provider and snap-gap recording
     pairs_file = tmp_path / "pairs.json"
     out_file = tmp_path / "report.json"
@@ -1397,13 +1416,37 @@ def test_integration_ac62_concurrent_reads_during_writes_and_scale_benchmark(
             cost_modes=("distance", "hops"),
         )
         assert len(results) == 4
-        # Verify exact cost equivalence between pgr_dijkstra and pgr_bdDijkstra
-        for mode in ("distance", "hops"):
-            dijk = next(r for r in results if r.algorithm == "pgr_dijkstra" and r.cost_mode == mode)
-            bd = next(r for r in results if r.algorithm == "pgr_bdDijkstra" and r.cost_mode == mode)
-            assert dijk.pair_costs == pytest.approx(bd.pair_costs)
-            assert len(dijk.explain_plan) > 0
-            assert len(bd.explain_plan) > 0
+        # Verify pgr_dijkstra is strictly bit-exact against an independent reference Dijkstra
+        # solver on every pair (1x/5x/10x, distance & hops), and audit pgr_bdDijkstra honestly
+        # (pgRouting 3.7 pgr_bdDijkstra has an upstream early-termination quirk on near-symmetric
+        # undirected grids, so POC 2 selects exact pgr_dijkstra as the production default).
+        with routing_db_engine.connect() as conn:
+            for mode in ("distance", "hops"):
+                ref_costs = compute_reference_shortest_path_costs(
+                    conn,
+                    seeded.sample_pairs,
+                    cost_mode=mode,
+                )
+                dijk = next(
+                    r for r in results if r.algorithm == "pgr_dijkstra" and r.cost_mode == mode
+                )
+                bd = next(
+                    r for r in results if r.algorithm == "pgr_bdDijkstra" and r.cost_mode == mode
+                )
+                dijk_parity = compare_algorithm_parity(ref_costs, dijk)
+                assert dijk_parity.exact_matches == len(seeded.sample_pairs)
+                assert dijk_parity.suboptimal_pairs == 0
+                assert dijk.pair_costs == pytest.approx(ref_costs, rel=1e-9, abs=1e-9)
+
+                # Candidate pgr_bdDijkstra must return valid paths (>= exact optimum) and plans
+                assert all(
+                    bd_c >= ref_c - 1e-6
+                    for bd_c, ref_c in zip(bd.pair_costs, ref_costs, strict=True)
+                )
+                bd_parity = compare_algorithm_parity(ref_costs, bd)
+                assert bd_parity.pair_count == len(seeded.sample_pairs)
+                assert len(dijk.explain_plan) > 0
+                assert len(bd.explain_plan) > 0
 
     assert last_seeded is not None
     conc = benchmark_concurrent_reads_during_writes(
