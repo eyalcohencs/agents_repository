@@ -47,6 +47,29 @@ No two parallel tasks may own the same file or nested directory. Shared files ar
 | `frontend/src/app/app.routes.ts`, `frontend/src/app/app.config.ts` | `T-025` |
 | `frontend/src/app/features/legal/legal-content.ts` | `T-021` (bilingual `he`/`en` dev placeholder + guard), `T-029` (approved bilingual prod copy) |
 
+### 1.3 Credit-Safe Batch Execution Policy (Mandatory for Orchestrator / Swarm)
+
+To keep token/credit consumption predictable and prevent half-finished runs if quota runs low, the orchestrator **MUST** obey these execution limits:
+1. **Execute ONLY ONE Batch per swarm run** (2–3 tasks max per run unless the user explicitly names a different set), then **STOP**, summarize completed tasks, and wait for the user to confirm they have enough credits for the next batch.
+2. **Concurrency Cap:** Spawn **at most 2–3 concurrent worker agents** at any time — never fan out 5–10 agents simultaneously.
+3. **Commit-Per-Task Checkpoint:** As soon as a task passes its scoped tests/review, update its checkbox in `docs/TASKS.md` (`[x]`) and create an atomic `git commit` so zero progress is lost if credits run out mid-batch; the next run resumes from the first `[ ]` task in the active batch.
+4. **Token-Thrifty Context Reading:** Workers read only `docs/TASKS.md` (their assigned task) and the **relevant sections** of `docs/SPEC.md` and `docs/ARCHITECTURE.md` (using line ranges rather than re-reading all 4 full documents on every turn).
+
+| Batch | Tasks in Batch | Max Parallel Workers | Relative Credit Cost | Stop Condition |
+|---|---|---|---|---|
+| **Batch 1** | `T-001` → `T-002` | 1 (sequential) | **Low** | Repo skeleton, Docker & initial POC schema green |
+| **Batch 2** | `T-003`, `T-004` | 2 | **Medium** | Snapping POC & Routing POC harnesses pass |
+| **Batch 3** | `T-005`, `T-006` → `T-007` | 2, then 1 | **Low–Medium** | Queue POC & technical choices locked |
+| **Batch 4** | `T-008` → `T-009` | 1 (sequential) | **Medium** | Production schema + frozen OpenAPI & Angular client |
+| **Batch 5** | `T-010`, `T-011`, `T-012` | 3 | **Medium** | Auth, Storage/Limits, and Worker infra green |
+| **Batch 6** | `T-013`, `T-019`, `T-030` | 3 | **Medium** | Angular i18n/RTL shell, User Migration, Search API |
+| **Batch 7** | `T-014` → `T-015` → `T-016` | 2 (start), 1 (integrate) | **Medium–High** | Ingestion/Batch, Uploads/Levels, Hybrid Routing |
+| **Batch 8** | `T-017`, `T-018` → `T-020` | 2, then 1 | **Medium** | Ratings/Viewport, Admin APIs, Backend Checkpoint |
+| **Batch 9A** | `T-021`, `T-022` | 2 | **Medium** | FE Auth/Legal/404 + FE Map/Search/Rating/GPX |
+| **Batch 9B** | `T-023`, `T-024` → `T-025` | 2, then 1 | **Medium** | FE Upload/My Tracks + FE Admin + FE Checkpoint |
+| **Batch 10** | `T-026` → `T-027` | 1–2 | **Medium–High** | Full E2E/Privacy QA + Final Review/Security & Docs |
+| **Batch 11** *(Human)* | `T-028` → `T-029` | Human-gated | **Low** | Real-data POC, bilingual legal copy, prod deploy |
+
 ---
 
 ## 2. Execution Dependency Graph (Derived Directly from Task Dependencies)

@@ -12,3 +12,4 @@ Strict Rules:
 - Never skip stages. Downstream agents must read the upstream `.md` artifacts before acting.
 - If two agents disagree on scope vs. feasibility, pause and ask the human user to decide.
 - Update `docs/TASKS.md` status (`[ ]` -> `[~]` -> `[x]`) as each task moves through Dev, QA, and Review.
+- **Credit-Safe Batch Execution:** Run **only ONE batch from `docs/TASKS.md` §1.3 per session** (2–3 tasks max unless the user explicitly asks for more), spawn **at most 3 concurrent workers**, commit each completed task immediately so progress is never lost, read only relevant line ranges of large docs, and **stop after the batch finishes** so the user can check remaining credits before starting the next batch.

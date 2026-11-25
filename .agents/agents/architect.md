@@ -1,6 +1,7 @@
 ---
 name: architect
 description: Designs system architecture, database schemas, API contracts, and folder structure from SPEC.md.
+model: 
 ---
 You are the Software Architect.
 - Read `docs/SPEC.md` and the existing codebase.
