@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OnTrackV2-POC" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Overpass Lower</name>
+    <trkseg>
+      <trkpt lat="32.648918" lon="35.000000"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.649279" lon="35.000000"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.649639" lon="35.000000"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.650000" lon="35.000000"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.650361" lon="35.000000"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.650721" lon="35.000000"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.651082" lon="35.000000"><ele>200.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OnTrackV2-POC" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Multi-Segment 2km Gap</name>
+    <trkseg>
+      <trkpt lat="32.670000" lon="35.000000"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.000320"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.000640"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.000959"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.001279"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.001599"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.001919"><ele>160.0</ele></trkpt>
+      <trkpt lat="32.670000" lon="35.002239"><ele>160.0</ele></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="32.669998" lon="35.023561"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.023881"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.024201"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.024520"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.024840"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.025160"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.025480"><ele>165.0</ele></trkpt>
+      <trkpt lat="32.669998" lon="35.025800"><ele>165.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

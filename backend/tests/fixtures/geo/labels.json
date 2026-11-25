@@ -1,0 +1,25 @@
+{
+  "expected_shared_node_pairs": [
+    [
+      "01_israel_base_forward.gpx",
+      "02_israel_base_reverse.gpx"
+    ],
+    [
+      "01_israel_base_forward.gpx",
+      "03_israel_mixed_density.gpx"
+    ]
+  ],
+  "forbidden_shared_node_pairs": [
+    [
+      "07_israel_parallel_a.gpx",
+      "08_israel_parallel_b.gpx"
+    ],
+    [
+      "09_israel_overpass_upper.gpx",
+      "10_israel_overpass_lower.gpx"
+    ]
+  ],
+  "expected_edge_reuse_tracks": [
+    "02_israel_base_reverse.gpx"
+  ]
+}

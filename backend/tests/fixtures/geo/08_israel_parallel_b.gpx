@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OnTrackV2-POC" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Parallel Trail B</name>
+    <trkseg>
+      <trkpt lat="32.640135" lon="35.000000"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.000266"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.000533"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.000799"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.001066"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.001332"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.001599"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.001865"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.002131"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.002398"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.002664"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.002931"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.640135" lon="35.003197"><ele>192.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

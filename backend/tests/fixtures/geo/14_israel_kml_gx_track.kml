@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
+  <Document>
+    <Placemark>
+      <name>Israel KML gx Track</name>
+      <gx:Track>
+        <gx:coord>35.010000 32.685000 220.0</gx:coord>
+        <gx:coord>35.010250 32.684923 221.0</gx:coord>
+        <gx:coord>35.010501 32.684846 222.0</gx:coord>
+        <gx:coord>35.010751 32.684769 223.0</gx:coord>
+        <gx:coord>35.011002 32.684692 224.0</gx:coord>
+        <gx:coord>35.011252 32.684614 225.0</gx:coord>
+        <gx:coord>35.011503 32.684537 226.0</gx:coord>
+        <gx:coord>35.011753 32.684460 227.0</gx:coord>
+        <gx:coord>35.012004 32.684383 228.0</gx:coord>
+        <gx:coord>35.012254 32.684306 229.0</gx:coord>
+      </gx:Track>
+    </Placemark>
+  </Document>
+</kml>

