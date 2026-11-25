@@ -1,0 +1,96 @@
+services:
+  postgres:
+    image: pgrouting/pgrouting:16-3.5-3.7
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ontrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ontrack}
+      POSTGRES_DB: ${POSTGRES_DB:-ontrack}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command:
+      - sh
+      - -c
+      - "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ontrack}:${POSTGRES_PASSWORD:-ontrack}@postgres:5432/${POSTGRES_DB:-ontrack}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      UPLOAD_STORAGE_DIR: /data/uploads
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@ontrack.local}
+      NETWORK_LAYER_MIN_ZOOM: ${NETWORK_LAYER_MIN_ZOOM:-12}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.workers.placeholder"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-ontrack}:${POSTGRES_PASSWORD:-ontrack}@postgres:5432/${POSTGRES_DB:-ontrack}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-15000}
+      UPLOAD_STORAGE_DIR: /data/uploads
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support@ontrack.local}
+      NETWORK_LAYER_MIN_ZOOM: ${NETWORK_LAYER_MIN_ZOOM:-12}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "${NGINX_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  uploads_data:

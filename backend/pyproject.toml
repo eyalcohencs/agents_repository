@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ontrack-backend"
+version = "0.1.0"
+description = "OnTrack v2 modular monolith backend"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "alembic>=1.14.0,<2.0",
+    "fastapi>=0.115.0,<1.0",
+    "geoalchemy2>=0.15.2,<1.0",
+    "psycopg[binary]>=3.2.3,<4.0",
+    "pydantic>=2.9.0,<3.0",
+    "pydantic-settings>=2.6.0,<3.0",
+    "sqlalchemy>=2.0.36,<3.0",
+    "uvicorn[standard]>=0.32.0,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27.0,<1.0",
+    "mypy>=1.13.0,<2.0",
+    "pytest>=8.3.0,<9.0",
+    "pyyaml>=6.0,<7.0",
+    "ruff>=0.8.0,<1.0",
+    "testcontainers[postgres]>=4.8.0,<5.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+known-third-party = ["alembic"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = [
+    "geoalchemy2.*",
+    "testcontainers.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "integration: integration tests requiring Docker/Testcontainers",
+]
