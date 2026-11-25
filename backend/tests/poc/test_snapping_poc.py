@@ -7,6 +7,7 @@ PostGIS / Alembic integration tests are marked with `@pytest.mark.integration`.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 from collections.abc import Generator
 from pathlib import Path
@@ -19,8 +20,10 @@ from sqlalchemy.engine import Engine
 
 from app.domain.geo.cli import (
     load_topology_expectations,
+    load_tracks_from_input,
     parse_threshold_pairs,
     run_benchmark,
+    sanitize_error_message,
 )
 from app.domain.geo.cli import main as cli_main
 from app.domain.geo.geodesy import (
@@ -543,6 +546,113 @@ def test_qa_ac53_gpx_only_mode_kml_limits_and_mixed_degenerate_segment() -> None
     assert len(parsed.segments) == 1
     assert parsed.segments[0].index == 0
     assert len(parsed.segments[0].points) == 2
+
+
+# ---------------------------------------------------------------------------
+# Security & Input Hardening (#16 Medium #4, Low #5; #17 Nits #1 & #4)
+# ---------------------------------------------------------------------------
+
+
+def test_directory_and_cli_reject_symlinks_without_reading(tmp_path: Path) -> None:
+    """Symlinks are rejected in parse_track_directory and load_tracks_from_input before read."""
+    target = tmp_path / "outside.gpx"
+    shutil.copy(FIXTURES_DIR / "01_israel_base_forward.gpx", target)
+
+    scan_dir = tmp_path / "scan"
+    scan_dir.mkdir()
+    link = scan_dir / "linked.gpx"
+    link.symlink_to(target)
+    shutil.copy(FIXTURES_DIR / "04_israel_sparse.gpx", scan_dir / "regular.gpx")
+
+    parsed, errors = parse_track_directory(scan_dir)
+    assert [p.name for p, _ in parsed] == ["regular.gpx"]
+    assert len(errors) == 1
+    assert errors[0][0].name == "linked.gpx"
+    assert errors[0][1].code == ERROR_CODE_UNSUPPORTED_FORMAT
+
+    loaded_single, skipped_single = load_tracks_from_input(link)
+    assert loaded_single == []
+    assert len(skipped_single) == 1
+    assert skipped_single[0]["code"] == ERROR_CODE_UNSUPPORTED_FORMAT
+
+
+def test_directory_and_cli_reject_oversized_files_before_read_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Oversized files fail on stat().st_size BEFORE Path.read_bytes() is ever invoked."""
+    oversized = tmp_path / "huge.gpx"
+    # Create a sparse file larger than 1 MiB without allocating real disk blocks
+    with oversized.open("wb") as handle:
+        handle.seek(2 * 1024 * 1024)
+        handle.write(b"\0")
+
+    def _forbid_read_bytes(self: Path) -> bytes:
+        raise AssertionError(f"read_bytes() must not be called on oversized file {self}")
+
+    monkeypatch.setattr(Path, "read_bytes", _forbid_read_bytes)
+
+    parsed, errors = parse_track_directory(tmp_path, max_upload_mb=1)
+    assert parsed == []
+    assert len(errors) == 1
+    assert errors[0][1].code == ERROR_CODE_FILE_TOO_LARGE
+
+    loaded_single, skipped_single = load_tracks_from_input(oversized, max_upload_mb=1)
+    assert loaded_single == []
+    assert len(skipped_single) == 1
+    assert skipped_single[0]["code"] == ERROR_CODE_FILE_TOO_LARGE
+
+
+def test_unsupported_format_message_reflects_allowed_formats() -> None:
+    """Unsupported format message dynamically lists only the configured allowed_formats."""
+    with pytest.raises(GeoParseError) as exc_info:
+        parse_track_file(
+            "trail.kml",
+            b"<kml/>",
+            allowed_formats=frozenset({"gpx"}),
+        )
+    assert exc_info.value.code == ERROR_CODE_UNSUPPORTED_FORMAT
+    assert "Supported formats: GPX." in exc_info.value.message
+    assert "KML" not in exc_info.value.message
+
+
+@pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf, -1.0])
+def test_non_finite_and_negative_floats_rejected(bad_value: float) -> None:
+    """NaN, inf, -inf, and negative values are rejected in config, geodesy, and CLI."""
+    with pytest.raises(ValueError):
+        SnappingConfig(point_simplification_distance_m=bad_value)
+    with pytest.raises(ValueError):
+        SnappingConfig(node_snap_radius_m=bad_value)
+
+    seg = TrackSegment(0, (TrackPoint(32.6, 35.0), TrackPoint(32.61, 35.01)))
+    track = _make_parsed_track([[TrackPoint(32.6, 35.0), TrackPoint(32.61, 35.01)]])
+    with pytest.raises(ValueError):
+        reduce_segment(seg, bad_value)
+    with pytest.raises(ValueError):
+        reduce_track(track, bad_value)
+    with pytest.raises(ValueError):
+        parse_threshold_pairs(f"{bad_value}:10")
+
+
+def test_cli_redacts_database_dsn_credentials_in_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI sanitizes DSN passwords before writing error messages to stderr."""
+    secret = "s3cr3t_pg_pass"
+    dsn = f"postgresql+psycopg://ontrack:{secret}@127.0.0.1:1/ontrack"
+    assert secret not in sanitize_error_message(f"could not connect to {dsn}")
+    assert "***:***@" in sanitize_error_message(f"could not connect to {dsn}")
+
+    def _failing_run_benchmark(**kwargs: object) -> dict[str, object]:
+        raise RuntimeError(f"Connection failed for {dsn}")
+
+    monkeypatch.setenv("DATABASE_URL", dsn)
+    monkeypatch.setattr("app.domain.geo.cli.run_benchmark", _failing_run_benchmark)
+
+    exit_code = cli_main(["--input", str(FIXTURES_DIR)])
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert secret not in captured.err
+    assert "***:***@" in captured.err
 
 
 # ---------------------------------------------------------------------------

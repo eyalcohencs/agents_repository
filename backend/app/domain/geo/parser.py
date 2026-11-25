@@ -302,6 +302,12 @@ def parse_kml(
     )
 
 
+def _format_supported_formats(allowed_formats: frozenset[str]) -> str:
+    if not allowed_formats:
+        return "none"
+    return ", ".join(fmt.upper() for fmt in sorted(allowed_formats))
+
+
 def parse_track_file(
     filename: str,
     raw_bytes: bytes,
@@ -324,9 +330,55 @@ def parse_track_file(
             max_upload_mb=max_upload_mb,
             max_upload_points=max_upload_points,
         )
+    supported = _format_supported_formats(allowed_formats)
     raise GeoParseError(
         ERROR_CODE_UNSUPPORTED_FORMAT,
-        f"Unsupported track file format '{ext or 'none'}'. Supported formats: GPX, KML.",
+        f"Unsupported track file format '{ext or 'none'}'. Supported formats: {supported}.",
+    )
+
+
+def parse_track_path(
+    path: Path,
+    *,
+    root_dir: Path | None = None,
+    max_upload_mb: int = 10,
+    max_upload_points: int = 50_000,
+    allowed_formats: frozenset[str] = frozenset({"gpx", "kml"}),
+) -> ParsedTrack:
+    """Safely validate path (no symlinks, allowed extension, size limit) before reading."""
+    if path.is_symlink():
+        raise GeoParseError(
+            ERROR_CODE_UNSUPPORTED_FORMAT,
+            "Symlink track inputs are not allowed.",
+        )
+    if root_dir is not None and not path.resolve().is_relative_to(root_dir.resolve()):
+        raise GeoParseError(
+            ERROR_CODE_UNSUPPORTED_FORMAT,
+            "Track file path escapes the input directory.",
+        )
+
+    ext = path.suffix.lower()
+    allowed_exts = {f".{fmt.lower()}" for fmt in allowed_formats}
+    if ext not in allowed_exts:
+        supported = _format_supported_formats(allowed_formats)
+        raise GeoParseError(
+            ERROR_CODE_UNSUPPORTED_FORMAT,
+            f"Unsupported track file format '{ext or 'none'}'. Supported formats: {supported}.",
+        )
+
+    max_bytes = max_upload_mb * 1024 * 1024
+    if path.stat().st_size > max_bytes:
+        raise GeoParseError(
+            ERROR_CODE_FILE_TOO_LARGE,
+            f"Track file exceeds maximum allowed size of {max_upload_mb} MB.",
+        )
+
+    return parse_track_file(
+        path.name,
+        path.read_bytes(),
+        max_upload_mb=max_upload_mb,
+        max_upload_points=max_upload_points,
+        allowed_formats=allowed_formats,
     )
 
 
@@ -336,23 +388,36 @@ def parse_track_directory(
     max_upload_mb: int = 10,
     max_upload_points: int = 50_000,
     recursive: bool = False,
+    allowed_formats: frozenset[str] = frozenset({"gpx", "kml"}),
 ) -> tuple[list[tuple[Path, ParsedTrack]], list[tuple[Path, GeoParseError]]]:
-    """Parse all files in a directory, skipping unsupported/corrupt files without aborting."""
+    """Parse all files in a directory, skipping symlinks/oversized/corrupt files safely."""
     iterator = sorted(directory.rglob("*") if recursive else directory.iterdir())
     parsed: list[tuple[Path, ParsedTrack]] = []
     errors: list[tuple[Path, GeoParseError]] = []
 
     for path in iterator:
+        if path.is_symlink():
+            errors.append(
+                (
+                    path,
+                    GeoParseError(
+                        ERROR_CODE_UNSUPPORTED_FORMAT,
+                        "Symlink track inputs are not allowed.",
+                    ),
+                )
+            )
+            continue
         if not path.is_file():
             continue
         if path.suffix.lower() == ".json":
             continue
         try:
-            track = parse_track_file(
-                path.name,
-                path.read_bytes(),
+            track = parse_track_path(
+                path,
+                root_dir=directory,
                 max_upload_mb=max_upload_mb,
                 max_upload_points=max_upload_points,
+                allowed_formats=allowed_formats,
             )
             parsed.append((path, track))
         except GeoParseError as exc:

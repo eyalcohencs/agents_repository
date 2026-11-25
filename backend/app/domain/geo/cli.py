@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import platform
+import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -26,7 +28,7 @@ from app.domain.geo.models import (
     SnappingConfig,
     TrackPoint,
 )
-from app.domain.geo.parser import parse_track_directory, parse_track_file
+from app.domain.geo.parser import parse_track_directory, parse_track_path
 from app.domain.geo.snapping import (
     InMemoryGraph,
     ingest_track_in_memory,
@@ -34,6 +36,12 @@ from app.domain.geo.snapping import (
 )
 
 DEFAULT_PAIRS_ARG = "5:5,10:10,20:20,20:10,30:20"
+_DSN_CREDENTIAL_PATTERN = re.compile(r"([a-zA-Z][a-zA-Z0-9+.-]*://)([^/\s@]+)@")
+
+
+def sanitize_error_message(message: str) -> str:
+    """Redact credentials embedded in database DSNs before printing to stderr."""
+    return _DSN_CREDENTIAL_PATTERN.sub(r"\1***:***@", message)
 
 
 def parse_threshold_pairs(raw: str) -> list[tuple[float, float]]:
@@ -48,8 +56,8 @@ def parse_threshold_pairs(raw: str) -> list[tuple[float, float]]:
             raise ValueError(f"Invalid pair '{cleaned}'; expected '<reduction_m>:<snap_m>'.")
         red_m = float(parts[0].strip())
         snap_m = float(parts[1].strip())
-        if red_m < 0 or snap_m < 0:
-            raise ValueError(f"Negative threshold in pair '{cleaned}'.")
+        if not math.isfinite(red_m) or not math.isfinite(snap_m) or red_m < 0 or snap_m < 0:
+            raise ValueError(f"Thresholds must be finite non-negative numbers in '{cleaned}'.")
         pairs.append((red_m, snap_m))
     if not pairs:
         raise ValueError("At least one reduction:snap pair must be provided.")
@@ -104,11 +112,17 @@ def load_tracks_from_input(
     input_path: Path,
     *,
     recursive: bool = False,
+    max_upload_mb: int = 10,
+    max_upload_points: int = 50_000,
 ) -> tuple[list[tuple[str, ParsedTrack]], list[dict[str, str]]]:
     """Load valid GPX/KML tracks from a file or directory, recording skipped files."""
-    if input_path.is_file():
+    if input_path.is_symlink() or input_path.is_file():
         try:
-            track = parse_track_file(input_path.name, input_path.read_bytes())
+            track = parse_track_path(
+                input_path,
+                max_upload_mb=max_upload_mb,
+                max_upload_points=max_upload_points,
+            )
             return [(input_path.name, track)], []
         except GeoParseError as exc:
             return [], [{"file": input_path.name, "code": exc.code, "message": exc.message}]
@@ -116,7 +130,12 @@ def load_tracks_from_input(
     if not input_path.is_dir():
         raise FileNotFoundError(f"Input path does not exist: {input_path}")
 
-    parsed, errors = parse_track_directory(input_path, recursive=recursive)
+    parsed, errors = parse_track_directory(
+        input_path,
+        max_upload_mb=max_upload_mb,
+        max_upload_points=max_upload_points,
+        recursive=recursive,
+    )
     loaded = [(p.name, t) for p, t in parsed]
     skipped = [
         {"file": p.name, "code": exc.code, "message": exc.message}
@@ -273,8 +292,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--database-url",
-        default=os.environ.get("DATABASE_URL"),
-        help="PostgreSQL SQLAlchemy URL (defaults to DATABASE_URL env var).",
+        default=None,
+        help=(
+            "PostgreSQL SQLAlchemy URL. Prefer setting the DATABASE_URL environment "
+            "variable to avoid exposing credentials in process lists."
+        ),
     )
     parser.add_argument(
         "--in-memory",
@@ -318,17 +340,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         pairs = parse_threshold_pairs(args.pairs)
         expectations = load_topology_expectations(args.labels_json)
+        database_url = args.database_url or os.environ.get("DATABASE_URL")
         report = run_benchmark(
             input_path=args.input,
             pairs=pairs,
-            database_url=args.database_url,
+            database_url=database_url,
             in_memory=args.in_memory,
             reset_db=args.reset_db,
             expectations=expectations,
             recursive=args.recursive,
         )
     except Exception as exc:
-        print(f"Benchmark error: {exc}", file=sys.stderr)
+        print(f"Benchmark error: {sanitize_error_message(str(exc))}", file=sys.stderr)
         return 1
 
     print(_format_summary_table(report))
