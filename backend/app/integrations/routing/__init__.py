@@ -25,6 +25,7 @@ from app.integrations.routing.models import (
     RoutingError,
     RoutingProviderError,
     geodesic_distance_m,
+    validate_routing_profile,
 )
 from app.integrations.routing.protocol import RoutingProvider
 from app.integrations.routing.providers import (
@@ -34,6 +35,7 @@ from app.integrations.routing.providers import (
     OpenRouteServiceProvider,
     ProviderCall,
     map_graphhopper_profile,
+    validate_provider_base_url,
 )
 
 __all__ = [
@@ -65,5 +67,7 @@ __all__ = [
     "geodesic_distance_m",
     "map_graphhopper_profile",
     "orient_edge_points",
+    "validate_provider_base_url",
+    "validate_routing_profile",
     "verify_route_continuity",
 ]

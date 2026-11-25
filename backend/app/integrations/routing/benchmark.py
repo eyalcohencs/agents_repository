@@ -435,12 +435,34 @@ def explain_nearest_node(
     point: Coordinate,
     *,
     radius_m: float = 2000.0,
+    disable_seqscan: bool = False,
 ) -> tuple[str, ...]:
-    """Capture `EXPLAIN (ANALYZE, BUFFERS)` plan for indexed geography KNN node lookup."""
-    rows = conn.execute(
-        text(f"EXPLAIN (ANALYZE, BUFFERS)\n{NEAREST_NODE_SQL}"),
-        {"lng": point.lng, "lat": point.lat, "radius_m": radius_m},
-    ).fetchall()
+    """Capture `EXPLAIN (ANALYZE, BUFFERS)` plan for indexed geography KNN node lookup.
+
+    When `disable_seqscan=True`, temporarily disables sequential scans for this statement
+    (and restores the prior setting in a `finally` block) to verify `ix_nodes_geom_geog`
+    index eligibility even on tiny tables where PostgreSQL prefers a 1-page Seq Scan.
+    """
+    params = {"lng": point.lng, "lat": point.lat, "radius_m": radius_m}
+    if not disable_seqscan:
+        rows = conn.execute(
+            text(f"EXPLAIN (ANALYZE, BUFFERS)\n{NEAREST_NODE_SQL}"),
+            params,
+        ).fetchall()
+        return tuple(str(row[0]) for row in rows)
+
+    in_tx = conn.in_transaction()
+    prev_val = str(conn.execute(text("SHOW enable_seqscan")).scalar_one()).strip().lower()
+    set_prefix = "SET LOCAL" if in_tx else "SET"
+    restore_val = "on" if prev_val == "on" else "off"
+    conn.execute(text(f"{set_prefix} enable_seqscan = off"))
+    try:
+        rows = conn.execute(
+            text(f"EXPLAIN (ANALYZE, BUFFERS)\n{NEAREST_NODE_SQL}"),
+            params,
+        ).fetchall()
+    finally:
+        conn.execute(text(f"{set_prefix} enable_seqscan = {restore_val}"))
     return tuple(str(row[0]) for row in rows)
 
 
@@ -621,7 +643,11 @@ def benchmark_concurrent_reads_during_writes(
     writer_started.wait(timeout=5.0)
 
     pair_idx = 0
-    while not writer_done.is_set() or len(reader_latencies) < max(3, len(pairs)):
+    min_read_attempts = max(3, len(pairs))
+    while (
+        not writer_done.is_set()
+        or (len(reader_latencies) + len(reader_errors)) < min_read_attempts
+    ):
         start_id, end_id = pairs[pair_idx % len(pairs)]
         pair_idx += 1
         started = time.perf_counter()

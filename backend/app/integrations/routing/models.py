@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -23,7 +24,18 @@ RouteBranch = Literal[
 DRIVING_ACCESS_PROFILE = "driving-car"
 DEFAULT_FALLBACK_PROFILE = "cycling-mountain"
 
+_PROFILE_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _WGS84_GEOD = Geod(ellps="WGS84")
+
+
+def validate_routing_profile(profile: str) -> str:
+    """Validate an external routing profile token against a strict safe allow-pattern."""
+    cleaned = profile.strip()
+    if not _PROFILE_PATTERN.fullmatch(cleaned):
+        raise ValueError(
+            f"Invalid routing profile {profile!r}: must match ^[a-z0-9][a-z0-9_-]{{0,63}}$."
+        )
+    return cleaned
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,10 +188,8 @@ class RoutingConfig:
             raise ValueError("provider_timeout_s must be finite and > 0.")
         if self.provider_max_retries < 0:
             raise ValueError("provider_max_retries must be >= 0.")
-        if not self.access_profile.strip():
-            raise ValueError("access_profile must be non-empty.")
-        if not self.fallback_profile.strip():
-            raise ValueError("fallback_profile must be non-empty.")
+        validate_routing_profile(self.access_profile)
+        validate_routing_profile(self.fallback_profile)
 
 
 class RoutingError(Exception):

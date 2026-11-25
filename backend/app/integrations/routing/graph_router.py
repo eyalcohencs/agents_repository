@@ -53,17 +53,34 @@ SELECT
     n.ele,
     ST_Distance(
         n.geom::geography,
-        ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+        ST_SetSRID(
+            ST_MakePoint(
+                CAST(:lng AS double precision),
+                CAST(:lat AS double precision)
+            ),
+            4326
+        )::geography
     ) AS distance_m
 FROM nodes AS n
 WHERE ST_DWithin(
     n.geom::geography,
-    ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-    :radius_m
+    ST_SetSRID(
+        ST_MakePoint(
+            CAST(:lng AS double precision),
+            CAST(:lat AS double precision)
+        ),
+        4326
+    )::geography,
+    CAST(:radius_m AS double precision)
 )
 ORDER BY
-    n.geom::geography <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography ASC,
-    distance_m ASC,
+    n.geom::geography <-> ST_SetSRID(
+        ST_MakePoint(
+            CAST(:lng AS double precision),
+            CAST(:lat AS double precision)
+        ),
+        4326
+    )::geography ASC,
     n.id ASC
 LIMIT 1
 """.strip()

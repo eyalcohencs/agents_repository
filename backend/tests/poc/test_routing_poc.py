@@ -397,7 +397,7 @@ def test_graphhopper_provider_profile_mapping_timeout_retry_and_secret_redaction
     )
     assert secret_key not in repr(provider)
 
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         res = provider.route(
             Coordinate(lat=32.6, lng=35.0),
             Coordinate(lat=32.61, lng=35.02),
@@ -429,7 +429,179 @@ def test_graphhopper_provider_profile_mapping_timeout_retry_and_secret_redaction
         )
     assert timeout_exc.value.code == "PROVIDER_TIMEOUT"
     assert timeout_exc.value.retryable is True
+    assert timeout_exc.value.__cause__ is None
+    assert timeout_exc.value.__context__ is None
     assert secret_key not in timeout_exc.value.message
+
+
+def test_security_httpx_info_logging_and_decoding_error_redaction(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Security Audit High #1: httpx INFO logs & non-transport httpx errors never leak API keys."""
+    secret_key = "gh-info-log-secret-424242"
+
+    def ok_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "paths": [
+                    {
+                        "distance": 500.0,
+                        "time": 45000,
+                        "points": {
+                            "type": "LineString",
+                            "coordinates": [[35.0, 32.6], [35.01, 32.61]],
+                        },
+                    }
+                ]
+            },
+        )
+
+    gh = GraphHopperProvider(
+        api_key=secret_key,
+        client=httpx.Client(transport=httpx.MockTransport(ok_handler)),
+        sleep_fn=lambda _: None,
+    )
+    with caplog.at_level(logging.INFO, logger="httpx"):
+        gh.route(
+            Coordinate(lat=32.6, lng=35.0),
+            Coordinate(lat=32.61, lng=35.01),
+            profile="driving-car",
+        )
+    assert secret_key not in caplog.text
+    if caplog.records:
+        assert "key=<redacted>" in caplog.text
+
+    # Non-transport httpx errors (DecodingError, TooManyRedirects) must be caught & redacted
+    for err_cls in (httpx.DecodingError, httpx.TooManyRedirects):
+        calls = 0
+
+        def error_handler(
+            request: httpx.Request,
+            _cls: type[httpx.HTTPError] = err_cls,
+        ) -> httpx.Response:
+            nonlocal calls
+            calls += 1
+            raise _cls(f"failed reading {request.url}")
+
+        failing_provider = GraphHopperProvider(
+            api_key=secret_key,
+            client=httpx.Client(transport=httpx.MockTransport(error_handler)),
+            max_retries=2,
+            sleep_fn=lambda _: None,
+        )
+        with pytest.raises(RoutingProviderError) as exc_info:
+            failing_provider.route(
+                Coordinate(lat=32.6, lng=35.0),
+                Coordinate(lat=32.61, lng=35.01),
+                profile="driving-car",
+            )
+        assert calls == 1  # Non-retryable
+        assert exc_info.value.code == "PROVIDER_CLIENT_ERROR"
+        assert exc_info.value.retryable is False
+        assert exc_info.value.__cause__ is None
+        assert exc_info.value.__context__ is None
+        assert secret_key not in exc_info.value.message
+
+
+def test_security_profile_and_base_url_validation(tmp_path: Path) -> None:
+    """Security Audit High #2 & Medium #3: block URL/path injection, SSRF, and NaN/inf configs."""
+    calls = 0
+
+    def should_not_be_called(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200)
+
+    ors = OpenRouteServiceProvider(
+        api_key="ors-test-key",
+        client=httpx.Client(transport=httpx.MockTransport(should_not_be_called)),
+    )
+    gh = GraphHopperProvider(
+        api_key="gh-test-key",
+        client=httpx.Client(transport=httpx.MockTransport(should_not_be_called)),
+    )
+
+    bad_profiles = [
+        "../../admin",
+        "driving-car/geojson?foo=bar#",
+        "driving-car?x=1",
+        "car@evil.com",
+        "driving car",
+        "../secret",
+        "",
+        "   ",
+    ]
+    origin = Coordinate(lat=32.6, lng=35.0)
+    dest = Coordinate(lat=32.61, lng=35.01)
+
+    for bad in bad_profiles:
+        with pytest.raises(ValueError):
+            ors.route(origin, dest, profile=bad)
+        with pytest.raises(ValueError):
+            gh.route(origin, dest, profile=bad)
+        with pytest.raises(ValueError):
+            map_graphhopper_profile(bad)
+        with pytest.raises(ValueError):
+            RoutingConfig(fallback_profile=bad)
+
+    assert calls == 0
+
+    # Untrusted JSON pair file with malicious profile must be rejected at load time
+    bad_json = tmp_path / "bad_pairs.json"
+    bad_json.write_text(
+        json.dumps(
+            [
+                {
+                    "name": "bad",
+                    "origin": {"lat": 32.6, "lng": 35.0},
+                    "destination": {"lat": 32.61, "lng": 35.01},
+                    "profile": "../../admin",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        load_coordinate_pairs(bad_json)
+
+    # base_url validation (SSRF / cleartext / embedded creds / query / fragment)
+    for bad_url in (
+        "http://api.openrouteservice.org",
+        "https://user:pass@api.openrouteservice.org",
+        "https://api.openrouteservice.org?key=1",
+        "https://api.openrouteservice.org#frag",
+        "https://",
+        "ftp://api.openrouteservice.org",
+    ):
+        with pytest.raises(ValueError):
+            OpenRouteServiceProvider(api_key="k", base_url=bad_url)
+
+    # allow_insecure_http permits localhost only when explicitly opted in
+    local_provider = GraphHopperProvider(
+        api_key="k",
+        base_url="http://localhost:8989",
+        allow_insecure_http=True,
+    )
+    try:
+        assert local_provider._client.follow_redirects is False
+    finally:
+        local_provider.close()
+
+    with pytest.raises(ValueError):
+        GraphHopperProvider(
+            api_key="k",
+            base_url="http://example.com",
+            allow_insecure_http=True,
+        )
+
+    # NaN / inf float parameters rejected
+    with pytest.raises(ValueError):
+        OpenRouteServiceProvider(api_key="k", timeout_s=float("nan"))
+    with pytest.raises(ValueError):
+        OpenRouteServiceProvider(api_key="k", timeout_s=float("inf"))
+    with pytest.raises(ValueError):
+        OpenRouteServiceProvider(api_key="k", retry_backoff_s=float("nan"))
 
 
 def test_build_shortest_path_sql_exact_full_graph_and_difficulty_neutral() -> None:
@@ -462,6 +634,9 @@ def test_build_shortest_path_sql_exact_full_graph_and_difficulty_neutral() -> No
 
     assert "geom::geography" in NEAREST_NODE_SQL
     assert "ST_DWithin" in NEAREST_NODE_SQL
+    assert "n.geom::geography <->" in NEAREST_NODE_SQL
+    assert "CAST(:radius_m AS double precision)" in NEAREST_NODE_SQL
+    assert "distance_m ASC" not in NEAREST_NODE_SQL
     assert "n.id ASC" in NEAREST_NODE_SQL
 
 
@@ -1193,7 +1368,8 @@ def test_integration_ac62_concurrent_reads_during_writes_and_scale_benchmark(
     specs = (
         GraphScaleSpec(label="1x", rows=10, cols=10),
         GraphScaleSpec(label="5x", rows=22, cols=22),
-        GraphScaleSpec(label="10x", rows=32, cols=32),
+        # Realistic spatial extent (~22 km x 19 km) so a 2 km lookup is genuinely selective
+        GraphScaleSpec(label="10x", rows=40, cols=40, step_deg=0.005),
     )
 
     last_seeded = None
@@ -1201,8 +1377,18 @@ def test_integration_ac62_concurrent_reads_during_writes_and_scale_benchmark(
         with routing_db_engine.begin() as conn:
             seeded = seed_synthetic_grid_graph(conn, spec, truncate=True)
             last_seeded = seeded
-            knn_plan = explain_nearest_node(conn, Coordinate(lat=32.605, lng=35.005))
-            assert any("ix_nodes_geom_geog" in line for line in knn_plan)
+            unconstrained_plan = explain_nearest_node(conn, Coordinate(lat=32.605, lng=35.005))
+            assert len(unconstrained_plan) > 0
+            # Verify ix_nodes_geom_geog is planner-eligible at every scale (even 1-page 1x)
+            indexed_plan = explain_nearest_node(
+                conn,
+                Coordinate(lat=32.605, lng=35.005),
+                disable_seqscan=True,
+            )
+            assert any("ix_nodes_geom_geog" in line for line in indexed_plan)
+            # On realistic 10x graph, the unconstrained planner must naturally choose the index
+            if spec.label == "10x":
+                assert any("ix_nodes_geom_geog" in line for line in unconstrained_plan)
 
         results = benchmark_graph_scale(
             routing_db_engine,
