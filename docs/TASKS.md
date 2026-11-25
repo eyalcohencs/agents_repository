@@ -207,7 +207,7 @@ flowchart TD
 
 *(All four tasks `T-003`, `T-004`, `T-005`, `T-006` run concurrently once `T-002` is `DONE`.)*
 
-- [ ] **T-003: POC 1 — Node Snapping, Point Reduction & Geometry Quality Benchmark**
+- [~] **T-003: POC 1 — Node Snapping, Point Reduction & Geometry Quality Benchmark**
   - **Start Dependencies:** `T-002`
   - **Completion Dependencies:** `T-002`
   - **Owned Paths:** `backend/app/domain/geo/`, `backend/tests/poc/test_snapping_poc.py`, `backend/tests/fixtures/geo/`
@@ -217,7 +217,7 @@ flowchart TD
   - **POC / Approval Gate:** Snapping POC Gate (synthetic) — measures counts, max/percentile node spacing, geometry deviation, false/missed joins, redundant edges, route quality, CPU/RAM/DB I/O, p95 latency
   - **Definition of Done:** All synthetic snapping fixtures and metrics logged; CLI ready for `T-028` real-data run.
 
-- [ ] **T-004: POC 2 — Exact Full-Graph pgRouting & RoutingProvider Benchmark**
+- [~] **T-004: POC 2 — Exact Full-Graph pgRouting & RoutingProvider Benchmark**
   - **Start Dependencies:** `T-002`
   - **Completion Dependencies:** `T-002`
   - **Owned Paths:** `backend/app/integrations/routing/`, `backend/tests/poc/test_routing_poc.py`
