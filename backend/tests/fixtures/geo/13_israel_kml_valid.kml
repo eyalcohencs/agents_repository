@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Israel KML Carmel Trail</name>
+    <Placemark>
+      <name>Israel KML Carmel Trail</name>
+      <LineString>
+        <coordinates>35.010000,32.680000,240.0 35.010290,32.680114,243.0 35.010580,32.680229,246.0 35.010870,32.680343,249.0 35.011160,32.680457,252.0 35.011449,32.680572,255.0 35.011739,32.680686,258.0 35.012029,32.680800,261.0 35.012319,32.680915,264.0 35.012609,32.681029,267.0</coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>

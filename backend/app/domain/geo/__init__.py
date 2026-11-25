@@ -1,0 +1,79 @@
+"""Geographic parsing, geodesy, node snapping, and geometry quality metrics."""
+
+from app.domain.geo.geodesy import (
+    geodesic_distance_m,
+    point_to_segment_distance_m,
+    reduce_segment,
+    reduce_track,
+    segment_length_m,
+)
+from app.domain.geo.metrics import (
+    BENCHMARK_THRESHOLD_PAIRS,
+    TopologyExpectation,
+    compute_deviation_metrics,
+    compute_percentile,
+    compute_spacing_metrics,
+    evaluate_benchmark_pair,
+    evaluate_topology_errors,
+)
+from app.domain.geo.models import (
+    GeometryQualityMetrics,
+    GeoParseError,
+    IngestionResult,
+    ParsedTrack,
+    ReducedTrack,
+    SnappedEdgeRef,
+    SnappingConfig,
+    TrackPoint,
+    TrackSegment,
+)
+from app.domain.geo.parser import (
+    compute_file_sha256,
+    compute_normalized_fingerprint,
+    parse_gpx,
+    parse_kml,
+    parse_track_directory,
+    parse_track_file,
+)
+from app.domain.geo.snapping import (
+    GRAPH_WRITER_ADVISORY_LOCK_KEY,
+    InMemoryGraph,
+    build_normalized_multilinestring_wkt,
+    ingest_track_in_memory,
+    ingest_track_transaction,
+)
+
+__all__ = [
+    "BENCHMARK_THRESHOLD_PAIRS",
+    "GRAPH_WRITER_ADVISORY_LOCK_KEY",
+    "GeoParseError",
+    "GeometryQualityMetrics",
+    "InMemoryGraph",
+    "IngestionResult",
+    "ParsedTrack",
+    "ReducedTrack",
+    "SnappedEdgeRef",
+    "SnappingConfig",
+    "TopologyExpectation",
+    "TrackPoint",
+    "TrackSegment",
+    "build_normalized_multilinestring_wkt",
+    "compute_deviation_metrics",
+    "compute_file_sha256",
+    "compute_normalized_fingerprint",
+    "compute_percentile",
+    "compute_spacing_metrics",
+    "evaluate_benchmark_pair",
+    "evaluate_topology_errors",
+    "geodesic_distance_m",
+    "ingest_track_in_memory",
+    "ingest_track_transaction",
+    "parse_gpx",
+    "parse_kml",
+    "parse_track_directory",
+    "parse_track_file",
+    "point_to_segment_distance_m",
+    "reduce_segment",
+    "reduce_track",
+    "segment_length_m",
+]

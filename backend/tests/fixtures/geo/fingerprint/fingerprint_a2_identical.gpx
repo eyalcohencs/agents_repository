@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OnTrackV2-POC" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Original Name</name>
+    <desc>Original description</desc>
+    <trkseg>
+      <trkpt lat="32.605000" lon="35.050000"><ele>100.0</ele><time>2026-01-01T10:00:00Z</time></trkpt>
+      <trkpt lat="32.605070" lon="35.050309"><ele>101.0</ele><time>2026-01-01T10:00:01Z</time></trkpt>
+      <trkpt lat="32.605140" lon="35.050617"><ele>102.0</ele><time>2026-01-01T10:00:02Z</time></trkpt>
+      <trkpt lat="32.605210" lon="35.050926"><ele>103.0</ele><time>2026-01-01T10:00:03Z</time></trkpt>
+      <trkpt lat="32.605280" lon="35.051235"><ele>104.0</ele><time>2026-01-01T10:00:04Z</time></trkpt>
+      <trkpt lat="32.605350" lon="35.051544"><ele>105.0</ele><time>2026-01-01T10:00:05Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

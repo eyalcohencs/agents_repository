@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OnTrackV2-POC" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Carmel Mixed Density</name>
+    <trkseg>
+      <trkpt lat="32.600000" lon="35.000000"><ele>180.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000043"><ele>180.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000085"><ele>180.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000128"><ele>180.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000170"><ele>180.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000213"><ele>181.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000256"><ele>181.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000298"><ele>181.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000341"><ele>181.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000383"><ele>181.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000426"><ele>182.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000469"><ele>182.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000511"><ele>182.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000554"><ele>182.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000597"><ele>182.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000639"><ele>183.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000682"><ele>183.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000724"><ele>183.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000767"><ele>183.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000810"><ele>183.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.000852"><ele>184.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.001704"><ele>188.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.002557"><ele>192.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.003409"><ele>196.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.003835"><ele>198.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.003878"><ele>198.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.003920"><ele>198.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.003963"><ele>198.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004005"><ele>198.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004048"><ele>199.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004091"><ele>199.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004133"><ele>199.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004176"><ele>199.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004218"><ele>199.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004261"><ele>200.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004304"><ele>200.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004346"><ele>200.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004389"><ele>200.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004432"><ele>200.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004474"><ele>201.0</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004517"><ele>201.2</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004559"><ele>201.4</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004602"><ele>201.6</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004645"><ele>201.8</ele></trkpt>
+      <trkpt lat="32.600000" lon="35.004687"><ele>202.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

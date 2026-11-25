@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="OnTrackV2-POC" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Carmel Sparse</name>
+    <trkseg>
+      <trkpt lat="32.610000" lon="35.000000"><ele>210.0</ele></trkpt>
+      <trkpt lat="32.610079" lon="35.001061"><ele>215.0</ele></trkpt>
+      <trkpt lat="32.610157" lon="35.002123"><ele>220.0</ele></trkpt>
+      <trkpt lat="32.610236" lon="35.003184"><ele>225.0</ele></trkpt>
+      <trkpt lat="32.610314" lon="35.004245"><ele>230.0</ele></trkpt>
+      <trkpt lat="32.610393" lon="35.005307"><ele>235.0</ele></trkpt>
+      <trkpt lat="32.610471" lon="35.006368"><ele>240.0</ele></trkpt>
+      <trkpt lat="32.610550" lon="35.007429"><ele>245.0</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
