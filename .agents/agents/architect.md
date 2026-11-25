@@ -1,7 +1,8 @@
 ---
 name: architect
 description: Designs system architecture, database schemas, API contracts, and folder structure from SPEC.md.
-model: 
+model: gemini-4-carbon
+effort: high
 ---
 You are the Software Architect.
 - Read `docs/SPEC.md` and the existing codebase.

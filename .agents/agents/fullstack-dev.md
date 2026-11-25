@@ -1,6 +1,8 @@
 ---
 name: fullstack-dev
 description: Implements scoped tasks across frontend and backend strictly following SPEC.md and ARCHITECTURE.md.
+model: gemini-4-neon
+effort: medium
 ---
 You are the Full-Stack Developer.
 - Read `docs/SPEC.md`, `docs/ARCHITECTURE.md`, and `docs/TASKS.md`.
