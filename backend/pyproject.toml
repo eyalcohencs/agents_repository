@@ -13,7 +13,8 @@ dependencies = [
     "fastapi>=0.115.0,<1.0",
     "geoalchemy2>=0.15.2,<1.0",
     "httpx>=0.27.0,<1.0",
-    "psycopg[binary]>=3.2.3,<4.0",
+    "procrastinate>=3.0.0,<4.0",
+    "psycopg[binary,pool]>=3.2.3,<4.0",
     "pydantic>=2.9.0,<3.0",
     "pydantic-settings>=2.6.0,<3.0",
     "pyproj>=3.7.0,<4.0",
@@ -58,6 +59,8 @@ disallow_untyped_defs = true
 module = [
     "defusedxml.*",
     "geoalchemy2.*",
+    "procrastinate.*",
+    "psycopg_pool.*",
     "pyproj.*",
     "shapely.*",
     "testcontainers.*",
