@@ -227,7 +227,7 @@ flowchart TD
   - **POC / Approval Gate:** Routing POC Gate (synthetic) — verifies exact optimality and records `EXPLAIN ANALYZE` + p50/p95 latencies
   - **Definition of Done:** Exact routing passes `AC-78` and scaling benchmarks; live comparison CLI ready for `T-028`.
 
-- [ ] **T-005: POC 3 — Procrastinate Transactional Enqueue, Lease Liveness & Abandoned `PROCESSING` Recovery**
+- [x] **T-005: POC 3 — Procrastinate Transactional Enqueue, Lease Liveness & Abandoned `PROCESSING` Recovery**
   - **Start Dependencies:** `T-002`
   - **Completion Dependencies:** `T-002`
   - **Owned Paths:** `backend/app/workers/queue_poc.py`, `backend/tests/poc/test_queue_poc.py`
@@ -237,7 +237,7 @@ flowchart TD
   - **POC / Approval Gate:** Queue POC Gate — determines final worker/queue schema fields for `T-008`
   - **Definition of Done:** Killed-worker recovery, healthy-long-job non-reclamation, and stale-worker fencing all pass on Testcontainers Postgres.
 
-- [ ] **T-006: Provisional Service Protocols & Draft API Schemas**
+- [x] **T-006: Provisional Service Protocols & Draft API Schemas**
   - **Start Dependencies:** `T-002`
   - **Completion Dependencies:** `T-002`
   - **Owned Paths:** `backend/app/contracts/provisional/`
@@ -251,7 +251,7 @@ flowchart TD
 
 ### Phase 2 — Architecture & Contract Finalization
 
-- [ ] **T-007: POC Review & Technical Choice Finalization**
+- [x] **T-007: POC Review & Technical Choice Finalization**
   - **Start Dependencies:** `T-003`, `T-004`, `T-005`
   - **Completion Dependencies:** `T-003`, `T-004`, `T-005`
   - **Owned Paths:** `docs/QA_REPORT.md` (Phase 1 POC findings section), `backend/app/core/config.py` (calibrated synthetic defaults)

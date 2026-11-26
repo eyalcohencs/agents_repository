@@ -311,7 +311,7 @@ Executed live against `pgrouting/pgrouting:16-3.5-3.7` across `DEFAULT_SCALE_SPE
 - **Concurrent Reads During Active Writes (`AC-62`, `10x` scale, `pgr_dijkstra` / `distance`):**
   - `19` `REPEATABLE READ READ ONLY` reads executed concurrently against `5` committed multi-statement batches + `5` rolled-back batches (`10` nodes / `9` edges per batch, `40 ms` mid-tx hold).
   - **`reader_errors = 0`**, **`partial_snapshot_violations = 0`**, observed consistent graph revisions `[1, 3, 5, 7, 9]`.
-  - Measured concurrent read latency: **min `17.60 ms`**, **p50 `22.86 ms`**, **p95 `34.86 ms`**, **max `60.67 ms`** (`<< 5,000 ms` target).
+  - Measured concurrent read latency: **min `17.60 ms`**, **p50 `22.86 ms`**, **p95 `34.86 ms`**, **max `60.67 ms`** (`<< 2,000 ms` target).
 - **Outside-BBox Exact Detour (`AC-78`):**
   - `seed_outside_bbox_fixture` verified exact optimal detour outside the Start/Finish bounding box under `pgr_dijkstra`: `distance` returned edges `[1, 2]` (`3257.02 m`, `matches_detour=True`); `hops` returned edges `[1, 2]` (`2.0` hops, `matches_detour=True`).
 - **`EXPLAIN (ANALYZE, BUFFERS)` Planner Evidence:**
