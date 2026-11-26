@@ -427,7 +427,9 @@ def upgrade() -> None:
         "CREATE INDEX ix_idempotency_records_expires_at ON idempotency_records (expires_at);"
     )
 
-    # 14. Procrastinate 3 schema (exec_driver_sql avoids SQLAlchemy parsing PL/pgSQL := / ::)
+    # 14. Procrastinate 3 schema (exec_driver_sql avoids SQLAlchemy parsing PL/pgSQL := / ::;
+    # doubling '%' mirrors SchemaManager.apply_schema() so psycopg pyformat passes literal '%'
+    # inside PL/pgSQL RAISE messages when SQLAlchemy supplies an empty parameter dict).
     if context.is_offline_mode():
         op.execute(SchemaManager.get_schema())
     else:
@@ -436,7 +438,8 @@ def upgrade() -> None:
             sa.text("SELECT to_regclass('public.procrastinate_jobs')")
         ).scalar_one()
         if existing is None:
-            bind.exec_driver_sql(SchemaManager.get_schema())
+            procrastinate_sql = SchemaManager.get_schema().replace("%", "%%")
+            bind.exec_driver_sql(procrastinate_sql)
 
 
 def downgrade() -> None:

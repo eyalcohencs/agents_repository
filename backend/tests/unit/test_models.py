@@ -412,3 +412,13 @@ def test_alembic_revision_chain_and_0002_procrastinate_coverage() -> None:
     for key in CANONICAL_APP_CONFIG_KEYS:
         assert f"'{key}'" in source_text
     assert "exec_driver_sql" in source_text
+    assert '.replace("%", "%%")' in source_text
+
+    # Regression check: doubled '%' round-trips cleanly through psycopg v3's query parser
+    # when SQLAlchemy's exec_driver_sql supplies an empty parameter mapping.
+    from psycopg._queries import _split_query
+
+    escaped_sql = procrastinate_sql.replace("%", "%%")
+    parts = _split_query(escaped_sql.encode("utf-8"), "utf-8")
+    assert len(parts) == 1
+    assert b"".join(part.pre for part in parts).decode("utf-8") == procrastinate_sql
