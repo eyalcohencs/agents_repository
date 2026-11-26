@@ -255,3 +255,134 @@ Verified result at commit `11f1c1a`: **`12 passed, 55 deselected in 35.70s`** ag
   - `dev-snapping`: **`0/2`** strikes.
   - `dev-routing`: **`2/2`** strikes resolved (Strike 1: `ix_nodes_geom_geog` planner verification via explicit `CAST` & realistic `10x` grid; Strike 2: mathematical proof of pgRouting 3.7 `pgr_bdDijkstra` early-termination quirk & independent Python Dijkstra reference oracle verifying `pgr_dijkstra` bit-exactness across all 30 pairs).
   - Debugger escalations required: **`0`**.
+
+---
+
+## Batch 3 / Phase 1 POC Review & Technical Lock (`T-005`, `T-006`, `T-007`)
+
+**QA Engineer:** `qa-engineer`  
+**Sign-Offs (`T-005` & `T-006`, merged at `df525d1`):**
+- **Code Review (`code-reviewer`, `#18`):** **APPROVE** (zero blocking issues)
+- **Security Audit (`security-auditor`, `#19`):** **SECURITY_PASS** (zero high/critical vulnerabilities)
+**Config Lock Commit (`T-007`):** `fc656c7` (`backend/app/core/config.py`)
+
+### 1. Measured Host Hardware, Software & Synthetic Database Environment (`ARCH §9` L694)
+
+| Dimension | Measured Value |
+|---|---|
+| Host OS & Kernel | `macOS 13.7.8` (Build `22H730`), Darwin `22.6.0`, `x86_64` |
+| Host CPU | `Intel(R) Core(TM) i5-7360U CPU @ 2.30GHz` (`4` logical cores) |
+| Host RAM | `16 GiB` (`17,179,869,184` bytes) |
+| Container Image | `pgrouting/pgrouting:16-3.5-3.7` (`x86_64-pc-linux-gnu`) |
+| PostgreSQL | `PostgreSQL 16.9 (Debian 16.9-1.pgdg110+1)` |
+| PostGIS | `3.5 USE_GEOS=1 USE_PROJ=1 USE_STATS=1` |
+| pgRouting | `3.7.3` |
+| Python Runtime | `3.11.4` (`Clang 13.0.0`) |
+| Backend Packages | `SQLAlchemy 2.1.9`, `psycopg 3.3.9`, `psycopg_pool 3.3.3`, `procrastinate 3.12.0`, `pydantic 2.14.4`, `alembic 1.20.1`, `pytest 8.4.2`, `ruff 0.17.6`, `mypy 1.20.2` (`strict=true`) |
+| Synthetic DB Sizes (`pg_database_size`) | `1x` (`20×20`, `400` nodes / `760` edges): `16.32 MB` (`nodes` `136.0 KB`, `edges` `296.0 KB`); `5x` (`45×45`, `2,025` nodes / `3,960` edges): `17.52 MB` (`nodes` `504.0 KB`, `edges` `1,064.0 KB`); `10x` (`64×64`, `4,096` nodes / `8,064` edges): `18.98 MB` (`nodes` `960.0 KB`, `edges` `1,984.0 KB`) |
+
+---
+
+### 2. Consolidated Phase 1 POC Review & Technical Decisions
+
+#### 2.1 `T-003` — Snapping & Geometry Quality Synthesis (Synthetic Gate)
+- **Measured Metrics:** Consolidated from the Batch 2 5-pair synthetic benchmark above (`15` Israel fixtures, `5,409` raw points; `5/5`, `10/10`, `20/20`, `20/10`, `30/20` m; p95 latency `9.62–34.66 ms`, well below the `30,000 ms` target).
+- **Synthetic Lock Decision:** Retain `DEFAULT_POINT_SIMPLIFICATION_DISTANCE_M = 20.0` and `DEFAULT_NODE_SNAP_RADIUS_M = 20.0` (`MAX_UPLOAD_POINTS = 50_000`) as the synthetic Phase 1 baseline defaults in `backend/app/core/config.py`.
+- **Action Flagged for `T-028` (Real Archive Gate):** Nominate decoupled **`20/10 m`** (`point_simplification_distance_m=20.0`, `node_snap_radius_m=10.0`) as the primary candidate for real legacy Israel GPX/KML calibration in `T-028`, since `20/10 m` achieved ~66% node/edge reduction while cutting synthetic false joins from `FJ = 14` (`20/20 m`) down to `FJ = 1` (overpass/underpass crossing only).
+
+#### 2.2 `T-004` — Exact Full-Graph pgRouting Benchmark & Algorithm Lock
+Executed live against `pgrouting/pgrouting:16-3.5-3.7` across `DEFAULT_SCALE_SPECS` (`1x`, `5x`, `10x`, `5` deterministic pairs × `3` iterations = `15` measured samples per `(scale, algorithm, cost_mode)` cell), audited against the independent exact Python Dijkstra reference oracle (`compute_reference_shortest_path_costs()`):
+
+| Scale (`Grid`) | Nodes / Edges | Algorithm | Cost Mode | Min (ms) | P50 (ms) | P95 (ms) | Max (ms) | Exact vs. Oracle | Suboptimal Pairs | Max Abs Delta |
+|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `1x` (`20×20`) | `400 / 760` | **`pgr_dijkstra`** | `distance` | `2.36` | **`3.35`** | **`5.11`** | `6.59` | **`5 / 5`** | **`0`** | `0.000000` |
+| `1x` (`20×20`) | `400 / 760` | `pgr_bdDijkstra` | `distance` | `2.56` | `3.48` | `5.61` | `7.16` | `3 / 5` | `2` | `16.756012 m` |
+| `1x` (`20×20`) | `400 / 760` | **`pgr_dijkstra`** | `hops` | `2.50` | **`4.04`** | **`7.28`** | `8.51` | **`5 / 5`** | **`0`** | `0.000000` |
+| `1x` (`20×20`) | `400 / 760` | `pgr_bdDijkstra` | `hops` | `2.40` | `3.34` | `4.38` | `5.17` | `5 / 5` | `0` | `0.000000` |
+| `5x` (`45×45`) | `2,025 / 3,960` | **`pgr_dijkstra`** | `distance` | `7.49` | **`11.58`** | **`14.87`** | `15.87` | **`5 / 5`** | **`0`** | `0.000000` |
+| `5x` (`45×45`) | `2,025 / 3,960` | `pgr_bdDijkstra` | `distance` | `8.82` | `12.21` | `57.72` | `157.46` | `4 / 5` | `1` | `0.342865 m` |
+| `5x` (`45×45`) | `2,025 / 3,960` | **`pgr_dijkstra`** | `hops` | `7.63` | **`11.02`** | **`16.13`** | `22.15` | **`5 / 5`** | **`0`** | `0.000000` |
+| `5x` (`45×45`) | `2,025 / 3,960` | `pgr_bdDijkstra` | `hops` | `6.77` | `10.23` | `13.00` | `13.43` | `5 / 5` | `0` | `0.000000` |
+| `10x` (`64×64`) | `4,096 / 8,064` | **`pgr_dijkstra`** | `distance` | `11.86` | **`13.93`** | **`19.83`** | `26.05` | **`5 / 5`** | **`0`** | `0.000000` |
+| `10x` (`64×64`) | `4,096 / 8,064` | `pgr_bdDijkstra` | `distance` | `11.08` | `13.15` | `16.15` | `17.29` | `3 / 5` | `2` | `0.263885 m` |
+| `10x` (`64×64`) | `4,096 / 8,064` | **`pgr_dijkstra`** | `hops` | `10.41` | **`12.13`** | **`13.07`** | `13.15` | **`5 / 5`** | **`0`** | `0.000000` |
+| `10x` (`64×64`) | `4,096 / 8,064` | `pgr_bdDijkstra` | `hops` | `10.26` | `12.64` | `16.23` | `18.70` | `5 / 5` | `0` | `0.000000` |
+
+- **Concurrent Reads During Active Writes (`AC-62`, `10x` scale, `pgr_dijkstra` / `distance`):**
+  - `19` `REPEATABLE READ READ ONLY` reads executed concurrently against `5` committed multi-statement batches + `5` rolled-back batches (`10` nodes / `9` edges per batch, `40 ms` mid-tx hold).
+  - **`reader_errors = 0`**, **`partial_snapshot_violations = 0`**, observed consistent graph revisions `[1, 3, 5, 7, 9]`.
+  - Measured concurrent read latency: **min `17.60 ms`**, **p50 `22.86 ms`**, **p95 `34.86 ms`**, **max `60.67 ms`** (`<< 5,000 ms` target).
+- **Outside-BBox Exact Detour (`AC-78`):**
+  - `seed_outside_bbox_fixture` verified exact optimal detour outside the Start/Finish bounding box under `pgr_dijkstra`: `distance` returned edges `[1, 2]` (`3257.02 m`, `matches_detour=True`); `hops` returned edges `[1, 2]` (`2.0` hops, `matches_detour=True`).
+- **`EXPLAIN (ANALYZE, BUFFERS)` Planner Evidence:**
+  - **Nearest-node lookup (`NEAREST_NODE_SQL`, `radius_m = 2000.0`, unconstrained planner after `ANALYZE`):**
+    - `1x`: `Index Scan using ix_nodes_geom_geog on nodes n` (`Buffers: shared hit=15`, Planning `0.401 ms`, Execution **`0.738 ms`**).
+    - `5x`: `Bitmap Heap Scan on nodes n` -> `Bitmap Index Scan on ix_nodes_geom_geog` (`Buffers: shared hit=14`, Planning `0.375 ms`, Execution **`2.800 ms`**).
+    - `10x`: `Bitmap Heap Scan on nodes n` -> `Bitmap Index Scan on ix_nodes_geom_geog` (`Buffers: shared hit=15`, Planning `0.418 ms`, Execution **`0.664 ms`**).
+  - **Exact full-graph `10x` `pgr_dijkstra` (`64×64`, `8,064` edges, `127`-edge path):**
+    - `distance`: `Function Scan on pgr_dijkstra` (`actual time=7.068..7.074 ms`, `shared hit=108`) + `Hash Left/Right Join` onto `edges`/`nodes` -> total `Buffers: shared hit=294`, Planning `0.405 ms`, Execution **`11.727 ms`**.
+    - `hops`: `Function Scan on pgr_dijkstra` (`actual time=4.872..4.880 ms`, `shared hit=108`) -> total `Buffers: shared hit=294`, Planning `0.460 ms`, Execution **`9.209 ms`**.
+- **Algorithm & Provider Lock Decision:**
+  - **Locked:** `ROUTING_ALGORITHM = "pgr_dijkstra"` (strictly bit-exact across all `30/30` `(scale, cost_mode, pair)` checks, while pgRouting `3.7.3` `pgr_bdDijkstra` exhibited suboptimal distance paths at `1x` `+16.756 m`, `5x` `+0.343 m`, `10x` `+0.264 m`, plus the Batch 2 `10×10` `+0.024 m` quirk).
+  - **Locked Defaults:** `ROUTING_COST_MODE = "distance"` (with `"hops"` supported for comparison), `ROUTING_CLOSE_RADIUS_M = 2000.0`, `ROUTING_FAR_RADIUS_M = 10_000.0`, `ROUTING_FALLBACK_PROFILE = "cycling-mountain"`, `ROUTING_CONTINUITY_TOLERANCE_M = 150.0`, `ROUTING_PROVIDER_TIMEOUT_S = 10.0`, `ROUTING_PROVIDER_MAX_RETRIES = 2`.
+  - **Deferred to `T-028`:** Live OpenRouteService vs. GraphHopper comparison on real Israeli routes (requires human-supplied API keys).
+
+#### 2.3 `T-005` — Queue POC (`Procrastinate 3.12.0` + Universal Fencing)
+- **Verification Suite (`backend/tests/poc/test_queue_poc.py`, merged at `df525d1`):**
+  - Unit tests (`pytest -m "not integration" tests/poc/test_queue_poc.py`): **`37 passed in 0.99s`** (`QueuePocConfig`, `to_psycopg_dsn`, `evaluate_queue_poc`, `LeaseHeartbeatRunner`, `CREDIT_BEARING_STATUSES`).
+  - Testcontainers integration (`pytest -m integration tests/poc/test_queue_poc.py -s` on `pgrouting/pgrouting:16-3.5-3.7`): **`9 passed in 25.55s`**:
+    - `AC-58`: Same-connection SQLAlchemy 2 + `psycopg` v3 deferral into Procrastinate 3 (`pg_current_xact_id()` parity, concurrent-session uncommitted isolation, immediate provisional credit on commit).
+    - `AC-59`: Post-enqueue fault rolls back `uploads` (`DRAFT` preserved), `procrastinate_jobs`, and `poc_idempotency_records` atomically, followed by clean retry.
+    - `AC-60(a)`: Idempotent confirm replay returns original job ID with zero duplicates; mismatched difficulty or upload ID raises `IdempotencyConflictError`.
+    - `AC-60(b)`: Double delivery (both post-`ACTIVE` and mid-`PROCESSING`) creates zero duplicate `tracks` rows and bumps `graph_metadata.revision` at most once.
+    - `AC-63` & `AC-79(a)`: Real subprocess worker (`python -m app.workers.queue_poc`) killed via `SIGKILL` mid-`PROCESSING` -> zero partial graph writes, Procrastinate `get_stalled_jobs(seconds_since_heartbeat=...)` & `retry_stalled_procrastinate_jobs` detect/retry dead job, reconciler moves `PROCESSING -> RETRY` + re-enqueues, recovery worker completes `ACTIVE` on attempt 2 with zero duplicates; technical exhaustion moves to `TECHNICAL_FAILED` retaining provisional credit.
+    - `AC-79(b)`: Healthy long-running subprocess job (`hold=3.2s > lease=1.6s`, `heartbeat=0.35s`) renews `last_heartbeat_at`/`lease_expires_at` and is NOT reclaimed by reconciler (`skipped_healthy_processing=1`) or Procrastinate `get_stalled_jobs` (`[]`), completing `ACTIVE` on attempt 1.
+    - `AC-80`: Stale `active_attempt_id` is fenced out (`rowcount == 0`, clean rollback) across all 4 transitions (`ACTIVE`, `REJECTED`, `RETRY`, `TECHNICAL_FAILED`) plus `renew_attempt_lease`, both during active takeover and post-`ACTIVE`.
+    - Orphan recovery & retention: Reconciler recovers aged `PENDING`/`RETRY` orphans (respecting `pending_grace_s`, idempotent on re-run); `purge_old_procrastinate_jobs(retention_days=14)` deletes finished jobs older than 14 days while preserving recent ones.
+  - Lint & Typecheck: `ruff check app/workers/queue_poc.py tests/poc/test_queue_poc.py` -> `All checks passed!`; `mypy app/workers/queue_poc.py tests/poc/test_queue_poc.py` -> `Success: no issues found in 2 source files`.
+- **Measured Timings & Architectural Go/No-Go Verdict:**
+  - **Verdict:** **`GO_PROCRASTINATE`** (all 9 POC rubric criteria verified).
+  - **Same-tx confirm + enqueue latency (`5` samples):** `[10.11, 10.71, 8.58, 8.67, 10.38] ms` -> **p50 = `10.11 ms`**, **max = `10.71 ms`**.
+- **Defect Caught & Resolved During QA (`1/2` Strikes):**
+  - Strike 1 (`#13`): `mark_upload_retry(..., enqueue_retry_job=True)` raised unhandled `procrastinate.exceptions.AlreadyEnqueued` when a `todo` job already existed for `queueing_lock = 'upload:<id>'`, aborting the `PROCESSING -> RETRY` transaction. Fixed by `dev-queue` in `a31f84d` (`#14`) using `contextlib.suppress(AlreadyEnqueued)` around `session.begin_nested()`, verified green on full Testcontainers re-run.
+- **Locked Queue/Worker Defaults (`backend/app/core/config.py`) & `T-008` Schema Contract:**
+  - Locked defaults: `QUEUE_BACKEND = "procrastinate"`, `WORKER_LEASE_DURATION_S = 120`, `WORKER_HEARTBEAT_INTERVAL_S = 30` (enforced `heartbeat * 2 <= lease`), `WORKER_RECONCILE_INTERVAL_S = 60`, `WORKER_MAX_ATTEMPTS = 5`, `WORKER_JOB_RETENTION_DAYS = 14`.
+  - Locked `T-008` migration requirements: keep Procrastinate's native tables (`procrastinate_jobs`, `procrastinate_events`, `procrastinate_workers`, `procrastinate_periodic_defers`) alongside lease/fencing columns (`active_attempt_id`, `attempt_count`, `processing_started_at`, `last_heartbeat_at`, `lease_expires_at`, indexed `(status, lease_expires_at)`) on both `uploads` and `batch_files`, plus `uploads.rejection_code` and user-scoped `idempotency_records`.
+
+#### 2.4 `T-006` — Provisional Service Protocols & Draft API Schemas
+- **Verification Suite (`backend/tests/unit/test_provisional_contracts.py`, `78a54b2`):**
+  - **`110 passed in 0.62s`**, `ruff check app/contracts tests/unit/test_provisional_contracts.py` -> `All checks passed!`, `mypy app/contracts tests/unit/test_provisional_contracts.py` -> `Success: no issues found in 7 source files`.
+  - Verified zero-drift identity re-exports (`ErrorResponse`, `HealthResponse`, `PublicConfigResponse`, `RoutingProvider`), empty `app.contracts.__all__` ahead of `T-009` freeze, `@runtime_checkable` + strict-mypy protocol conformance (`FakeRoutingProvider`, `OpenRouteServiceProvider`, `GraphHopperProvider`, `EligibilityService`, `IngestionService`, `RatingService`, `TrackSource`, `FileStorageAdapter`, strictly separated `GeocodingProvider`), `derive_contribution_level` `AC-101` boundaries, `ConfigDict(extra="forbid")` + bool/NaN/Inf rejection across all 9 mutation request models (`AC-2`, `AC-47`, `AC-55`, `AC-56`, `AC-77`), `AdminUserSchema` redaction (`AC-42`), and immutable `GATE_1_POLICY_ANNOTATIONS` (13) / `GATE_2_OPEN_FIELDS` (8).
+
+#### 2.5 `T-007` — Locked Config Verification (`backend/app/core/config.py` & `backend/tests/unit/test_config.py`)
+- All 11 existing `Settings` fields, defaults, production guardrails, and `/api/config/public` response preserved unchanged (zero secrets exposed).
+- All 17 new POC-locked defaults, env overrides, literal locks (`pgr_dijkstra`, `procrastinate`), positive/finite/bool/regex validators, and cross-field validators (`routing_far_radius_m >= routing_close_radius_m`, `worker_heartbeat_interval_s * 2 <= worker_lease_duration_s`) verified in `backend/tests/unit/test_config.py`.
+
+---
+
+### 3. Batch 3 / Phase 1 Verification Stage AC Traceability
+
+| AC | Scope Verified | Status |
+|---|---|---|
+| `AC-58` | Same-tx `pg_current_xact_id()` upload confirmation + Procrastinate deferral; immediate provisional credit while worker paused | **PASS** (Unit + Live Testcontainers) |
+| `AC-59` | Post-enqueue fault atomic rollback of `uploads` (`DRAFT`), `procrastinate_jobs`, and `poc_idempotency_records`, plus clean retry | **PASS** (Live Testcontainers) |
+| `AC-60` | (a) Idempotent confirm replay & payload-mismatch `IdempotencyConflictError`; (b) idempotent double delivery with 0 duplicate tracks & 1 revision bump | **PASS** (Live Testcontainers) |
+| `AC-62` | `10x` concurrent `REPEATABLE READ READ ONLY` reads (`19` reads, `0` errors, `0` partial snapshots, p50 `22.86 ms` / p95 `34.86 ms`) + `1x`/`5x`/`10x` `EXPLAIN (ANALYZE, BUFFERS)` plans | **PASS** (Live Testcontainers) |
+| `AC-63` | Real subprocess `SIGKILL` recovery (`attempt 2 -> ACTIVE`, 0 duplicates) + technical exhaustion -> `TECHNICAL_FAILED` retaining provisional credit | **PASS** (Live Testcontainers) |
+| `AC-64`, `AC-65`, `AC-96` | Synthetic snapping correctness & 5-pair benchmark table consolidated (`20/20 m` synthetic default; `20/10 m` nominated for `T-028`) | **PASS** (Synthetic Phase 1; real archive in `T-028`) |
+| `AC-78` | Zero bbox pruning in SQL; outside-bbox optimal detour verified on `pgr_dijkstra` (`distance` `3257.02 m`, `hops` `2.0`) | **PASS** (Live Testcontainers) |
+| `AC-79` | (a) Abandoned `PROCESSING` lease recovery after `SIGKILL`; (b) healthy long-running job (`3.2s > 1.6s` lease) preserved by heartbeats & not reclaimed | **PASS** (Live Testcontainers) |
+| `AC-80` | Universal `active_attempt_id` fencing blocks all 4 transitions (`ACTIVE`, `REJECTED`, `RETRY`, `TECHNICAL_FAILED`) + lease renewal with clean rollback | **PASS** (Live Testcontainers) |
+
+---
+
+### 4. Non-Blocking Hardening & Follow-Up Notes Carried Forward (`#18`, `#19`)
+
+- **`T-008` / `T-015` (Idempotency Scoping):** Scope production `idempotency_records` PK and advisory lock by `(user_id, operation, key)` with `uploads.user_id` ownership check, key length limit (`<= 255`), and TTL cleanup.
+- **`T-009` / `T-016` (Contract Hardening):** Reject NUL (`\x00`) and control characters in auth request strings, add finite upper bounds on `AdminConfigUpdateRequest` (e.g., preventing `timedelta` overflow on `rejected_track_grace_period_hours`), and enforce `system`-role RBAC server-side before honoring `RouteCreateRequest.include_diagnostics=True`.
+- **`T-012` (Production Worker & Reconciler):**
+  - Read `DATABASE_URL` strictly from env/config (drop POC `--database-url` CLI flag and `--ready-file` test hook) and inject an app-managed `session_factory` with explicit `engine.dispose()` instead of closure-scoped engine creation (`queue_poc.py:1497-1525`).
+  - Drop unused `SqlAlchemySessionConnector` helper (`queue_poc.py:332-462`) now that Procrastinate 3's native `SyncPsycopgConnector(connection=...)` is verified.
+  - Add batch `LIMIT` to `reconcile_stalled_and_orphaned`, query indexed `queueing_lock` instead of `args->>'upload_id'`, cap `retry_delay_s` exponent, mirror `bool` rejection on duration helper args, and catch `Exception` (not `BaseException`) with sanitized error logging in `LeaseHeartbeatRunner._run`.
+  - Optionally wrap `--one-shot` test worker subprocesses in `try/finally` kill guards on timeout.
+- **Batch 3 Escalation / Strikes Log:** `dev-contracts`: `0/2`; `dev-queue`: `1/2` (resolved in `a31f84d`); `dev-config`: `0/2`; debugger escalations: `0`.
