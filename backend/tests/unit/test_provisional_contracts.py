@@ -358,8 +358,11 @@ class _IncompleteStub:
 # ---------------------------------------------------------------------------
 
 
-def test_contracts_root_stays_empty_until_t009_freeze() -> None:
-    assert contracts_root_all == []
+def test_contracts_root_exports_frozen_contracts_after_t009() -> None:
+    assert "CONTRACT_STAGE" in contracts_root_all
+    assert "CONTRACT_VERSION" in contracts_root_all
+    assert "ErrorResponse" in contracts_root_all
+    assert "RoutingProvider" in contracts_root_all
 
 
 def test_identity_reexports_have_zero_drift() -> None:

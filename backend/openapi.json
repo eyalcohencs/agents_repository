@@ -1,0 +1,3767 @@
+{
+  "components": {
+    "schemas": {
+      "AdminConfigResponse": {
+        "description": "Response for GET/PUT /api/admin/config (FR-022, AC-46..AC-47, AC-77, zero secrets).",
+        "properties": {
+          "free_route_creations": {
+            "minimum": 0.0,
+            "title": "Free Route Creations",
+            "type": "integer"
+          },
+          "min_required_tracks": {
+            "minimum": 1.0,
+            "title": "Min Required Tracks",
+            "type": "integer"
+          },
+          "node_snap_radius_m": {
+            "exclusiveMinimum": 0.0,
+            "title": "Node Snap Radius M",
+            "type": "number"
+          },
+          "point_simplification_distance_m": {
+            "exclusiveMinimum": 0.0,
+            "title": "Point Simplification Distance M",
+            "type": "number"
+          },
+          "rejected_track_grace_period_hours": {
+            "minimum": 0.0,
+            "title": "Rejected Track Grace Period Hours",
+            "type": "number"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "min_required_tracks",
+          "point_simplification_distance_m",
+          "node_snap_radius_m",
+          "free_route_creations",
+          "rejected_track_grace_period_hours"
+        ],
+        "title": "AdminConfigResponse",
+        "type": "object"
+      },
+      "AdminConfigUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Atomic update payload for PUT /api/admin/config (FR-022, AC-46..AC-47, AC-77).",
+        "properties": {
+          "free_route_creations": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Free Route Creations",
+            "type": "integer"
+          },
+          "min_required_tracks": {
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Min Required Tracks",
+            "type": "integer"
+          },
+          "node_snap_radius_m": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000.0,
+            "title": "Node Snap Radius M",
+            "type": "number"
+          },
+          "point_simplification_distance_m": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 10000.0,
+            "title": "Point Simplification Distance M",
+            "type": "number"
+          },
+          "rejected_track_grace_period_hours": {
+            "maximum": 8760.0,
+            "minimum": 0.0,
+            "title": "Rejected Track Grace Period Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "min_required_tracks",
+          "point_simplification_distance_m",
+          "node_snap_radius_m",
+          "free_route_creations",
+          "rejected_track_grace_period_hours"
+        ],
+        "title": "AdminConfigUpdateRequest",
+        "type": "object"
+      },
+      "AdminNetworkEdgeFeature": {
+        "description": "GeoJSON Feature for one ACTIVE trail network edge.",
+        "properties": {
+          "geometry": {
+            "$ref": "#/components/schemas/GeoJsonLineStringGeometry"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/AdminNetworkEdgeProperties"
+          },
+          "type": {
+            "const": "Feature",
+            "default": "Feature",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "geometry",
+          "properties"
+        ],
+        "title": "AdminNetworkEdgeFeature",
+        "type": "object"
+      },
+      "AdminNetworkEdgeProperties": {
+        "description": "Edge properties for GET /api/admin/network/edges (zero author PII per AC-93).",
+        "properties": {
+          "avg_difficulty": {
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Avg Difficulty",
+            "type": "number"
+          },
+          "display_level": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Display Level",
+            "type": "integer"
+          },
+          "edge_id": {
+            "title": "Edge Id",
+            "type": "integer"
+          },
+          "length_m": {
+            "exclusiveMinimum": 0.0,
+            "title": "Length M",
+            "type": "number"
+          },
+          "report_count": {
+            "minimum": 0.0,
+            "title": "Report Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "edge_id",
+          "length_m",
+          "avg_difficulty",
+          "display_level",
+          "report_count"
+        ],
+        "title": "AdminNetworkEdgeProperties",
+        "type": "object"
+      },
+      "AdminNetworkEdgesGeoJsonResponse": {
+        "description": "Typed GeoJSON FeatureCollection for GET /api/admin/network/edges (AC-39..41, AC-86).",
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNetworkEdgeFeature"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "graph_revision": {
+            "minimum": 0.0,
+            "title": "Graph Revision",
+            "type": "integer"
+          },
+          "type": {
+            "const": "FeatureCollection",
+            "default": "FeatureCollection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_revision",
+          "features"
+        ],
+        "title": "AdminNetworkEdgesGeoJsonResponse",
+        "type": "object"
+      },
+      "AdminNetworkGeoJsonResponse": {
+        "description": "Polymorphic GeoJSON FeatureCollection union retained for backwards compatibility.",
+        "properties": {
+          "features": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AdminNetworkEdgeFeature"
+                },
+                {
+                  "$ref": "#/components/schemas/AdminNetworkNodeFeature"
+                }
+              ]
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "graph_revision": {
+            "minimum": 0,
+            "title": "Graph Revision",
+            "type": "integer"
+          },
+          "type": {
+            "const": "FeatureCollection",
+            "default": "FeatureCollection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_revision",
+          "features"
+        ],
+        "title": "AdminNetworkGeoJsonResponse",
+        "type": "object"
+      },
+      "AdminNetworkNodeFeature": {
+        "description": "GeoJSON Feature for one ACTIVE trail network node.",
+        "properties": {
+          "geometry": {
+            "$ref": "#/components/schemas/GeoJsonPointGeometry"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/AdminNetworkNodeProperties"
+          },
+          "type": {
+            "const": "Feature",
+            "default": "Feature",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "geometry",
+          "properties"
+        ],
+        "title": "AdminNetworkNodeFeature",
+        "type": "object"
+      },
+      "AdminNetworkNodeProperties": {
+        "description": "Node properties for GET /api/admin/network/nodes (zero author PII per AC-93).",
+        "properties": {
+          "ele": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ele"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "title": "AdminNetworkNodeProperties",
+        "type": "object"
+      },
+      "AdminNetworkNodesGeoJsonResponse": {
+        "description": "Typed GeoJSON FeatureCollection for GET /api/admin/network/nodes (AC-39..41, AC-86).",
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNetworkNodeFeature"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "graph_revision": {
+            "minimum": 0.0,
+            "title": "Graph Revision",
+            "type": "integer"
+          },
+          "type": {
+            "const": "FeatureCollection",
+            "default": "FeatureCollection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_revision",
+          "features"
+        ],
+        "title": "AdminNetworkNodesGeoJsonResponse",
+        "type": "object"
+      },
+      "AdminUserSchema": {
+        "additionalProperties": false,
+        "description": "Read-only user row for GET /api/admin/users (AC-42: no password_hash or created_at).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "user_type": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "email",
+          "user_type"
+        ],
+        "title": "AdminUserSchema",
+        "type": "object"
+      },
+      "AdminUsersResponse": {
+        "description": "Response for GET /api/admin/users (AC-42).",
+        "properties": {
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserSchema"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "title": "AdminUsersResponse",
+        "type": "object"
+      },
+      "AuthMeResponse": {
+        "description": "Response for GET /api/auth/me (ARCH §8, AC-14, AC-100..AC-103, AC-111).",
+        "properties": {
+          "contribution_level": {
+            "$ref": "#/components/schemas/ContributionLevelInfo"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "preferred_language": {
+            "default": "he",
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "user_type": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "email",
+          "user_type",
+          "session_id",
+          "contribution_level"
+        ],
+        "title": "AuthMeResponse",
+        "type": "object"
+      },
+      "AuthenticatedUserSchema": {
+        "description": "Authenticated user profile returned by login/session endpoints (zero secrets).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "preferred_language": {
+            "default": "he",
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          },
+          "user_type": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "email",
+          "user_type"
+        ],
+        "title": "AuthenticatedUserSchema",
+        "type": "object"
+      },
+      "BatchFileStatus": {
+        "description": "Per-file durable tracking states inside a batch import (ARCH §7).",
+        "enum": [
+          "PENDING",
+          "PROCESSING",
+          "RETRY",
+          "COMPLETED",
+          "SKIPPED",
+          "FAILED"
+        ],
+        "title": "BatchFileStatus",
+        "type": "string"
+      },
+      "BatchImportSource": {
+        "enum": [
+          "cloud",
+          "server"
+        ],
+        "title": "BatchImportSource",
+        "type": "string"
+      },
+      "BatchImportStartRequest": {
+        "additionalProperties": false,
+        "description": "Payload for POST /api/admin/imports (FR-013, AC-43..AC-45, AC-89..AC-90).",
+        "properties": {
+          "source": {
+            "enum": [
+              "cloud",
+              "server"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "BatchImportStartRequest",
+        "type": "object"
+      },
+      "BatchImportStatus": {
+        "description": "Lifecycle states for administrator batch import jobs (ARCH §7).",
+        "enum": [
+          "QUEUED",
+          "RUNNING",
+          "COMPLETED",
+          "COMPLETED_WITH_ERRORS",
+          "FAILED"
+        ],
+        "title": "BatchImportStatus",
+        "type": "string"
+      },
+      "BatchImportStatusResponse": {
+        "description": "Response (202 Accepted) and status model for POST /api/admin/imports.",
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "failed_count": {
+            "minimum": 0.0,
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "imported_count": {
+            "minimum": 0.0,
+            "title": "Imported Count",
+            "type": "integer"
+          },
+          "skipped_count": {
+            "minimum": 0.0,
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "cloud",
+              "server"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchImportStatus"
+          },
+          "total_files": {
+            "minimum": 0.0,
+            "title": "Total Files",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "batch_id",
+          "source",
+          "status",
+          "total_files",
+          "imported_count",
+          "skipped_count",
+          "failed_count",
+          "started_at"
+        ],
+        "title": "BatchImportStatusResponse",
+        "type": "object"
+      },
+      "ContributionLevelInfo": {
+        "additionalProperties": false,
+        "description": "Derived community contribution level summary (ACTIVE uploads only, ARCH §4.19).",
+        "properties": {
+          "active_count": {
+            "minimum": 0.0,
+            "title": "Active Count",
+            "type": "integer"
+          },
+          "badge_key": {
+            "$ref": "#/components/schemas/ContributionLevelKey"
+          },
+          "level": {
+            "enum": [
+              "Explorer",
+              "Adventurer",
+              "Trailblazer",
+              "Trail Master"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "next_level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "Explorer",
+                  "Adventurer",
+                  "Trailblazer",
+                  "Trail Master"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Level"
+          },
+          "tracks_to_next": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracks To Next"
+          }
+        },
+        "required": [
+          "level",
+          "badge_key",
+          "active_count"
+        ],
+        "title": "ContributionLevelInfo",
+        "type": "object"
+      },
+      "ContributionLevelKey": {
+        "description": "Stable machine-readable community contribution level keys (FR-024, FR-027).",
+        "enum": [
+          "explorer",
+          "adventurer",
+          "trailblazer",
+          "trail_master"
+        ],
+        "title": "ContributionLevelKey",
+        "type": "string"
+      },
+      "ContributionLevelLabel": {
+        "enum": [
+          "Explorer",
+          "Adventurer",
+          "Trailblazer",
+          "Trail Master"
+        ],
+        "title": "ContributionLevelLabel",
+        "type": "string"
+      },
+      "CoordinateSchema": {
+        "additionalProperties": false,
+        "description": "WGS84 API coordinate `{lat, lng, ele?}` with finite bounds matching Coordinate.",
+        "properties": {
+          "ele": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ele"
+          },
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lng",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "title": "CoordinateSchema",
+        "type": "object"
+      },
+      "CreditState": {
+        "description": "Contribution credit state exposed on My Tracks and upload confirmations.",
+        "enum": [
+          "NONE",
+          "PROVISIONAL",
+          "PERMANENT"
+        ],
+        "title": "CreditState",
+        "type": "string"
+      },
+      "DifficultyLevel": {
+        "enum": [
+          1,
+          2,
+          3
+        ],
+        "title": "DifficultyLevel",
+        "type": "integer"
+      },
+      "EdgeRatingPutRequest": {
+        "additionalProperties": false,
+        "description": "Payload for PUT /api/network/edges/{id}/rating (AC-74..AC-76, AC-84).",
+        "properties": {
+          "difficulty": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Difficulty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "difficulty"
+        ],
+        "title": "EdgeRatingPutRequest",
+        "type": "object"
+      },
+      "EdgeRatingResponse": {
+        "description": "Response for GET/PUT /api/network/edges/{id}/rating (zero other-user PII, AC-93).",
+        "properties": {
+          "avg_difficulty": {
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Avg Difficulty",
+            "type": "number"
+          },
+          "display_level": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Display Level",
+            "type": "integer"
+          },
+          "edge_id": {
+            "title": "Edge Id",
+            "type": "integer"
+          },
+          "graph_revision": {
+            "minimum": 0.0,
+            "title": "Graph Revision",
+            "type": "integer"
+          },
+          "report_count": {
+            "minimum": 0.0,
+            "title": "Report Count",
+            "type": "integer"
+          },
+          "user_rating": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2,
+                  3
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Rating"
+          }
+        },
+        "required": [
+          "edge_id",
+          "avg_difficulty",
+          "display_level",
+          "report_count",
+          "graph_revision"
+        ],
+        "title": "EdgeRatingResponse",
+        "type": "object"
+      },
+      "EntitlementDenialReason": {
+        "description": "Machine-readable reasons attached to ROUTE_NOT_ALLOWED denials (ARCH §8).",
+        "enum": [
+          "BELOW_THRESHOLD",
+          "ALLOWANCE_EXHAUSTED",
+          "ACCOUNT_INACTIVE"
+        ],
+        "title": "EntitlementDenialReason",
+        "type": "string"
+      },
+      "EntitlementResponse": {
+        "description": "Response for GET /api/me/entitlement (ARCH §8, AC-66..AC-72, AC-100..AC-103).",
+        "properties": {
+          "admin_exempt": {
+            "default": false,
+            "title": "Admin Exempt",
+            "type": "boolean"
+          },
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "contribution_eligible": {
+            "title": "Contribution Eligible",
+            "type": "boolean"
+          },
+          "contribution_level": {
+            "$ref": "#/components/schemas/ContributionLevelInfo"
+          },
+          "free_allowance_limit": {
+            "minimum": 0.0,
+            "title": "Free Allowance Limit",
+            "type": "integer"
+          },
+          "free_allowance_remaining": {
+            "minimum": 0.0,
+            "title": "Free Allowance Remaining",
+            "type": "integer"
+          },
+          "grace_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grace Until"
+          },
+          "min_required_tracks": {
+            "minimum": 1.0,
+            "title": "Min Required Tracks",
+            "type": "integer"
+          },
+          "qualifying_count": {
+            "minimum": 0.0,
+            "title": "Qualifying Count",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntitlementDenialReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "allowed",
+          "contribution_eligible",
+          "qualifying_count",
+          "min_required_tracks",
+          "free_allowance_limit",
+          "free_allowance_remaining",
+          "contribution_level"
+        ],
+        "title": "EntitlementResponse",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "description": "Stable machine-readable API error codes localized by the frontend (FR-027).",
+        "enum": [
+          "BAD_REQUEST",
+          "UNAUTHORIZED",
+          "FORBIDDEN",
+          "NOT_FOUND",
+          "METHOD_NOT_ALLOWED",
+          "CONFLICT",
+          "VALIDATION_ERROR",
+          "RATE_LIMITED",
+          "INTERNAL_ERROR",
+          "SERVICE_UNAVAILABLE",
+          "INVALID_CREDENTIALS",
+          "USERNAME_TAKEN",
+          "EMAIL_TAKEN",
+          "SESSION_EXPIRED",
+          "SESSION_REVOKED",
+          "ACCOUNT_INACTIVE",
+          "CSRF_VALIDATION_FAILED",
+          "ROUTE_NOT_ALLOWED",
+          "RESERVATION_EXPIRED",
+          "REQUEST_ID_EXPIRED",
+          "REQUEST_ID_CONFLICT",
+          "REQUEST_IN_FLIGHT",
+          "IDEMPOTENCY_KEY_MISMATCH",
+          "EMPTY_FILE",
+          "UNSUPPORTED_FORMAT",
+          "MALFORMED_XML",
+          "UNSAFE_XML",
+          "INVALID_COORDINATE",
+          "DEGENERATE_GEOMETRY",
+          "FILE_TOO_LARGE",
+          "TOO_MANY_POINTS",
+          "DRAFT_LIMIT_EXCEEDED",
+          "DUPLICATE_UPLOAD",
+          "STORAGE_FAILURE",
+          "ROUTING_PROVIDER_ERROR",
+          "ROUTING_PROVIDER_QUOTA",
+          "ROUTE_CONTINUITY_FAILED",
+          "GEOCODING_PROVIDER_ERROR",
+          "GEOCODING_PROVIDER_QUOTA",
+          "VIEWPORT_TOO_LARGE",
+          "BATCH_IMPORT_ALREADY_RUNNING"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "ErrorResponse": {
+        "description": "Standard API error envelope: {code, message, details?}.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "GeoJsonLineStringGeometry": {
+        "description": "RFC 7946 GeoJSON LineString geometry (`[lng, lat]` coordinate order).",
+        "properties": {
+          "coordinates": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "minItems": 2,
+            "title": "Coordinates",
+            "type": "array"
+          },
+          "type": {
+            "const": "LineString",
+            "default": "LineString",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinates"
+        ],
+        "title": "GeoJsonLineStringGeometry",
+        "type": "object"
+      },
+      "GeoJsonPointGeometry": {
+        "description": "RFC 7946 GeoJSON Point geometry (`[lng, lat]` or `[lng, lat, ele]`).",
+        "properties": {
+          "coordinates": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              }
+            ],
+            "title": "Coordinates"
+          },
+          "type": {
+            "const": "Point",
+            "default": "Point",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinates"
+        ],
+        "title": "GeoJsonPointGeometry",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "Response payload for GET /api/health.",
+        "properties": {
+          "database": {
+            "const": "ok",
+            "title": "Database",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "database"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "IngestionRunSourceType": {
+        "enum": [
+          "upload",
+          "batch_file"
+        ],
+        "title": "IngestionRunSourceType",
+        "type": "string"
+      },
+      "IngestionRunStatus": {
+        "description": "Derived lifecycle states for per-submission ingestion provenance runs.",
+        "enum": [
+          "RUNNING",
+          "COMPLETED",
+          "REJECTED",
+          "FAILED"
+        ],
+        "title": "IngestionRunStatus",
+        "type": "string"
+      },
+      "IngestionRunSummarySchema": {
+        "description": "Per-submission ingestion provenance summary (ARCH §7, T-008).",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "graph_revision_before": {
+            "minimum": 0.0,
+            "title": "Graph Revision Before",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "upload",
+              "batch_file"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IngestionRunStatus"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_type",
+          "status",
+          "track_id",
+          "graph_revision_before",
+          "created_at"
+        ],
+        "title": "IngestionRunSummarySchema",
+        "type": "object"
+      },
+      "LocationSearchResponse": {
+        "description": "Response for GET /api/map/search?q=...&lang=... (AC-104..AC-107).",
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LocationSearchResultSchema"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "results"
+        ],
+        "title": "LocationSearchResponse",
+        "type": "object"
+      },
+      "LocationSearchResultSchema": {
+        "description": "Single geographic location match for GET /api/map/search (FR-025).",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Lng",
+            "type": "number"
+          },
+          "place_id": {
+            "title": "Place Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "place_id",
+          "display_name",
+          "lat",
+          "lng"
+        ],
+        "title": "LocationSearchResultSchema",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "description": "Payload for POST /api/auth/login (FR-002, AC-7..AC-8).",
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LoginResponse": {
+        "description": "Response for POST /api/auth/login including non-secret session_id (ARCH §4.6, §8).",
+        "properties": {
+          "contribution_level": {
+            "$ref": "#/components/schemas/ContributionLevelInfo"
+          },
+          "preferred_language": {
+            "default": "he",
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          },
+          "session_id": {
+            "format": "uuid",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthenticatedUserSchema"
+          }
+        },
+        "required": [
+          "user",
+          "session_id",
+          "contribution_level"
+        ],
+        "title": "LoginResponse",
+        "type": "object"
+      },
+      "LogoutRequest": {
+        "additionalProperties": false,
+        "description": "Optional payload for POST /api/auth/logout multi-tab safety (ARCH §4.6, AC-11).",
+        "properties": {
+          "expected_session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Session Id"
+          }
+        },
+        "title": "LogoutRequest",
+        "type": "object"
+      },
+      "LogoutResponse": {
+        "description": "Response for POST /api/auth/logout indicating revocation or supersession.",
+        "properties": {
+          "reason": {
+            "default": "revoked",
+            "enum": [
+              "revoked",
+              "superseded",
+              "already_revoked"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "revoked": {
+            "title": "Revoked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revoked"
+        ],
+        "title": "LogoutResponse",
+        "type": "object"
+      },
+      "MyUploadItemSchema": {
+        "description": "Single non-draft upload row on My Tracks (FR-019, AC-73, zero raw stack traces).",
+        "properties": {
+          "credit_state": {
+            "$ref": "#/components/schemas/CreditState"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "latest_ingestion_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestionRunSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overall_difficulty": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2,
+                  3
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Difficulty"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "rejection_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RejectionCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "safe_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Error Message"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UploadStatus"
+          },
+          "submitted_at": {
+            "format": "date-time",
+            "title": "Submitted At",
+            "type": "string"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "filename",
+          "status",
+          "credit_state",
+          "submitted_at"
+        ],
+        "title": "MyUploadItemSchema",
+        "type": "object"
+      },
+      "MyUploadsResponse": {
+        "description": "Response for GET /api/me/uploads (FR-019, FR-024, AC-73, AC-100..AC-102).",
+        "properties": {
+          "contribution_level": {
+            "$ref": "#/components/schemas/ContributionLevelInfo"
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/EntitlementResponse"
+          },
+          "uploads": {
+            "items": {
+              "$ref": "#/components/schemas/MyUploadItemSchema"
+            },
+            "title": "Uploads",
+            "type": "array"
+          }
+        },
+        "required": [
+          "uploads",
+          "entitlement",
+          "contribution_level"
+        ],
+        "title": "MyUploadsResponse",
+        "type": "object"
+      },
+      "NetworkEdgeSchema": {
+        "description": "Active selectable network edge (zero uploader or rating-author PII per AC-93).",
+        "properties": {
+          "avg_difficulty": {
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Avg Difficulty",
+            "type": "number"
+          },
+          "display_level": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Display Level",
+            "type": "integer"
+          },
+          "edge_id": {
+            "title": "Edge Id",
+            "type": "integer"
+          },
+          "length_m": {
+            "exclusiveMinimum": 0.0,
+            "title": "Length M",
+            "type": "number"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CoordinateSchema"
+            },
+            "minItems": 2,
+            "title": "Points",
+            "type": "array"
+          },
+          "report_count": {
+            "minimum": 0.0,
+            "title": "Report Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "edge_id",
+          "points",
+          "length_m",
+          "avg_difficulty",
+          "display_level",
+          "report_count"
+        ],
+        "title": "NetworkEdgeSchema",
+        "type": "object"
+      },
+      "NetworkEdgesViewportResponse": {
+        "description": "Response for GET /api/network/edges?bbox=...&zoom=... (AC-74..AC-76, AC-87, AC-93).",
+        "properties": {
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/NetworkEdgeSchema"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "graph_revision": {
+            "minimum": 0.0,
+            "title": "Graph Revision",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "edges",
+          "truncated",
+          "graph_revision"
+        ],
+        "title": "NetworkEdgesViewportResponse",
+        "type": "object"
+      },
+      "PreferredLanguage": {
+        "enum": [
+          "he",
+          "en"
+        ],
+        "title": "PreferredLanguage",
+        "type": "string"
+      },
+      "PublicConfigResponse": {
+        "description": "Non-secret client configuration exposed via GET /api/config/public.",
+        "properties": {
+          "max_upload_mb": {
+            "title": "Max Upload Mb",
+            "type": "integer"
+          },
+          "network_layer_min_zoom": {
+            "title": "Network Layer Min Zoom",
+            "type": "integer"
+          },
+          "support_email": {
+            "title": "Support Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "support_email",
+          "network_layer_min_zoom",
+          "max_upload_mb"
+        ],
+        "title": "PublicConfigResponse",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "additionalProperties": false,
+        "description": "Payload for POST /api/auth/register (FR-001, AC-1..AC-6, AC-111).",
+        "properties": {
+          "email": {
+            "maxLength": 50,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 16,
+            "minLength": 4,
+            "title": "Password",
+            "type": "string"
+          },
+          "preferred_language": {
+            "default": "he",
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 32,
+            "minLength": 4,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "email",
+          "username",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RegisterResponse": {
+        "description": "Response for POST /api/auth/register (AC-3, AC-5).",
+        "properties": {
+          "preferred_language": {
+            "default": "he",
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          },
+          "status": {
+            "const": "succeed",
+            "default": "succeed",
+            "title": "Status",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          },
+          "user_type": {
+            "const": "regular",
+            "default": "regular",
+            "title": "User Type",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "username"
+        ],
+        "title": "RegisterResponse",
+        "type": "object"
+      },
+      "RejectionCode": {
+        "description": "Deterministic business rejection codes for accepted uploads (ARCH §4.8).",
+        "enum": [
+          "DEGENERATE_GEOMETRY",
+          "OUTSIDE_SERVICE_AREA",
+          "QUALITY_RULE_FAILED"
+        ],
+        "title": "RejectionCode",
+        "type": "string"
+      },
+      "ReservationState": {
+        "description": "Owned free-allowance reservation states (ARCH §4.10, §7).",
+        "enum": [
+          "RESERVED",
+          "CONSUMED",
+          "RELEASED",
+          "EXPIRED",
+          "NON_ALLOWANCE"
+        ],
+        "title": "ReservationState",
+        "type": "string"
+      },
+      "RouteCreateRequest": {
+        "additionalProperties": false,
+        "description": "Payload for POST /api/routes (FR-007, ARCH §4.7/§4.10, AC-22..AC-31, AC-82..AC-83).",
+        "properties": {
+          "end_lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "End Lat",
+            "type": "number"
+          },
+          "end_lng": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "End Lng",
+            "type": "number"
+          },
+          "include_diagnostics": {
+            "default": false,
+            "description": "Request admin playground diagnostics. Server MUST enforce `system`-role RBAC before honoring `include_diagnostics=True`; non-system callers must never receive diagnostics.",
+            "title": "Include Diagnostics",
+            "type": "boolean"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "start_lat": {
+            "maximum": 90.0,
+            "minimum": -90.0,
+            "title": "Start Lat",
+            "type": "number"
+          },
+          "start_lng": {
+            "maximum": 180.0,
+            "minimum": -180.0,
+            "title": "Start Lng",
+            "type": "number"
+          }
+        },
+        "required": [
+          "request_id",
+          "start_lat",
+          "start_lng",
+          "end_lat",
+          "end_lng"
+        ],
+        "title": "RouteCreateRequest",
+        "type": "object"
+      },
+      "RouteCreateResponse": {
+        "description": "Response for POST /api/routes (zero metrics per AC-31, zero author PII per AC-93).",
+        "properties": {
+          "diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RouteDiagnosticsSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "replayed": {
+            "default": false,
+            "title": "Replayed",
+            "type": "boolean"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/RouteSegmentSchema"
+            },
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "request_id",
+          "segments"
+        ],
+        "title": "RouteCreateResponse",
+        "type": "object"
+      },
+      "RouteDiagnosticsSchema": {
+        "description": "Admin-only playground diagnostics attached to POST /api/routes (ARCH §4.18, AC-38).",
+        "properties": {
+          "algorithm": {
+            "enum": [
+              "pgr_dijkstra",
+              "pgr_bdDijkstra"
+            ],
+            "title": "Algorithm",
+            "type": "string"
+          },
+          "branch": {
+            "enum": [
+              "connected",
+              "entry_equals_exit",
+              "disconnected",
+              "no_entry_fallback",
+              "entry_no_exit_fallback"
+            ],
+            "title": "Branch",
+            "type": "string"
+          },
+          "cost_mode": {
+            "enum": [
+              "distance",
+              "hops"
+            ],
+            "title": "Cost Mode",
+            "type": "string"
+          },
+          "entry_distance_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Distance M"
+          },
+          "entry_node_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Node Id"
+          },
+          "exit_distance_m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Distance M"
+          },
+          "exit_node_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Node Id"
+          },
+          "external_latency_ms": {
+            "minimum": 0.0,
+            "title": "External Latency Ms",
+            "type": "number"
+          },
+          "graph_revision": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graph Revision"
+          },
+          "internal_query_ms": {
+            "minimum": 0.0,
+            "title": "Internal Query Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "branch",
+          "algorithm",
+          "cost_mode",
+          "internal_query_ms",
+          "external_latency_ms"
+        ],
+        "title": "RouteDiagnosticsSchema",
+        "type": "object"
+      },
+      "RouteSegmentSchema": {
+        "description": "Single ordered section of a hybrid route response (ARCH §4.7, AC-24..AC-30).",
+        "properties": {
+          "avg_difficulty": {
+            "anyOf": [
+              {
+                "maximum": 3.0,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Difficulty"
+          },
+          "display_level": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2,
+                  3
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Level"
+          },
+          "edge_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edge Id"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CoordinateSchema"
+            },
+            "minItems": 2,
+            "title": "Points",
+            "type": "array"
+          },
+          "provider_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Profile"
+          },
+          "source": {
+            "enum": [
+              "network",
+              "external"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "points"
+        ],
+        "title": "RouteSegmentSchema",
+        "type": "object"
+      },
+      "UploadConfirmRequest": {
+        "additionalProperties": false,
+        "description": "Payload for POST /api/uploads/{id}/confirm (AC-55/56: rejects extra/injected fields).",
+        "properties": {
+          "overall_difficulty": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Overall Difficulty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "overall_difficulty"
+        ],
+        "title": "UploadConfirmRequest",
+        "type": "object"
+      },
+      "UploadConfirmResponse": {
+        "description": "Response (202 Accepted) for POST /api/uploads/{id}/confirm (AC-58..AC-60).",
+        "properties": {
+          "accepted_at": {
+            "format": "date-time",
+            "title": "Accepted At",
+            "type": "string"
+          },
+          "credit_state": {
+            "$ref": "#/components/schemas/CreditState"
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/EntitlementResponse"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "overall_difficulty": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Overall Difficulty",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/UploadStatus"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "filename",
+          "status",
+          "credit_state",
+          "overall_difficulty",
+          "accepted_at",
+          "entitlement"
+        ],
+        "title": "UploadConfirmResponse",
+        "type": "object"
+      },
+      "UploadDeleteResponse": {
+        "description": "Response for DELETE /api/uploads/{id} draft cancellation (AC-55, AC-92).",
+        "properties": {
+          "deleted": {
+            "const": true,
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id"
+        ],
+        "title": "UploadDeleteResponse",
+        "type": "object"
+      },
+      "UploadPreviewSegmentSchema": {
+        "description": "Server-owned preview polyline segment returned for a validated DRAFT upload.",
+        "properties": {
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/CoordinateSchema"
+            },
+            "minItems": 2,
+            "title": "Points",
+            "type": "array"
+          },
+          "segment_index": {
+            "minimum": 0.0,
+            "title": "Segment Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "segment_index",
+          "points"
+        ],
+        "title": "UploadPreviewSegmentSchema",
+        "type": "object"
+      },
+      "UploadStatus": {
+        "description": "Durable user track submission lifecycle states (PRD §6.5, ARCH §7).",
+        "enum": [
+          "DRAFT",
+          "PENDING",
+          "PROCESSING",
+          "RETRY",
+          "TECHNICAL_FAILED",
+          "ACTIVE",
+          "REJECTED"
+        ],
+        "title": "UploadStatus",
+        "type": "string"
+      },
+      "UploadValidateResponse": {
+        "description": "Response for POST /api/uploads/validate (AC-53..AC-55, zero credit).",
+        "properties": {
+          "credit_state": {
+            "const": "NONE",
+            "default": "NONE",
+            "title": "Credit State",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "point_count": {
+            "minimum": 2.0,
+            "title": "Point Count",
+            "type": "integer"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/UploadPreviewSegmentSchema"
+            },
+            "minItems": 1,
+            "title": "Segments",
+            "type": "array"
+          },
+          "status": {
+            "const": "DRAFT",
+            "default": "DRAFT",
+            "title": "Status",
+            "type": "string"
+          },
+          "upload_id": {
+            "format": "uuid",
+            "title": "Upload Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "upload_id",
+          "filename",
+          "point_count",
+          "segments",
+          "expires_at"
+        ],
+        "title": "UploadValidateResponse",
+        "type": "object"
+      },
+      "UserPreferencesPatchRequest": {
+        "additionalProperties": false,
+        "description": "Payload for PATCH /api/me/preferences (FR-027, AC-109..AC-111).",
+        "properties": {
+          "preferred_language": {
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preferred_language"
+        ],
+        "title": "UserPreferencesPatchRequest",
+        "type": "object"
+      },
+      "UserPreferencesResponse": {
+        "description": "Response for PATCH /api/me/preferences.",
+        "properties": {
+          "preferred_language": {
+            "enum": [
+              "he",
+              "en"
+            ],
+            "title": "Preferred Language",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preferred_language"
+        ],
+        "title": "UserPreferencesResponse",
+        "type": "object"
+      },
+      "UserRole": {
+        "description": "Server-enforced user account roles (PRD §2, Gate 1 confirmed).",
+        "enum": [
+          "regular",
+          "system",
+          "inactive"
+        ],
+        "title": "UserRole",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "Frozen T-009 HTTP API contract for OnTrack v2 covering all 20 ARCHITECTURE.md §8 rows (23 HTTP operations).",
+    "title": "OnTrack API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/admin/config": {
+      "get": {
+        "operationId": "getAdminConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          }
+        },
+        "summary": "Fetch editable FR-022 application settings (system role only)",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "operationId": "updateAdminConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Atomically update FR-022 application settings (system role only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/imports": {
+      "post": {
+        "operationId": "startAdminBatchImport",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchImportStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchImportStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current resource or idempotency state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Start an asynchronous administrator batch track import (system role only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/network/edges": {
+      "get": {
+        "operationId": "getAdminNetworkEdges",
+        "parameters": [
+          {
+            "description": "Optional ETag for conditional 304 validation (auth checked first)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional ETag for conditional 304 validation (auth checked first)",
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNetworkEdgesGeoJsonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified (matching single-snapshot ETag)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Fetch all ACTIVE trail network edges as GeoJSON with single-snapshot ETag",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/network/nodes": {
+      "get": {
+        "operationId": "getAdminNetworkNodes",
+        "parameters": [
+          {
+            "description": "Optional ETag for conditional 304 validation (auth checked first)",
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional ETag for conditional 304 validation (auth checked first)",
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNetworkNodesGeoJsonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "304": {
+            "description": "Not Modified (matching single-snapshot ETag)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Fetch all ACTIVE trail network nodes as GeoJSON with single-snapshot ETag",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/users": {
+      "get": {
+        "operationId": "getAdminUsers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          }
+        },
+        "summary": "List read-only user directory (system role only)",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "authLogin",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          }
+        },
+        "summary": "Authenticate user and establish session cookie",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "authLogout",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/LogoutRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Revoke active session with optional multi-tab expected_session_id guard",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "authMe",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          }
+        },
+        "summary": "Fetch authenticated user profile, session_id, language, and contribution level",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "operationId": "authRegister",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current resource or idempotency state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          }
+        },
+        "summary": "Register a new user account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/config/public": {
+      "get": {
+        "operationId": "getPublicConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Fetch non-secret public client configuration",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Dependent service temporarily unavailable."
+          }
+        },
+        "summary": "Check backend and database availability",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/map/search": {
+      "get": {
+        "operationId": "searchMapLocations",
+        "parameters": [
+          {
+            "description": "Location query string",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Location query string",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional preferred result language ('he' or 'en')",
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "he",
+                    "en"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional preferred result language ('he' or 'en')",
+              "title": "Lang"
+            }
+          },
+          {
+            "description": "Maximum number of search results",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "description": "Maximum number of search results",
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocationSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Dependent service temporarily unavailable."
+          }
+        },
+        "summary": "Search Hebrew or English map locations via provider-independent geocoding",
+        "tags": [
+          "map"
+        ]
+      }
+    },
+    "/api/me/entitlement": {
+      "get": {
+        "operationId": "getMyEntitlement",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          }
+        },
+        "summary": "Fetch route-creation entitlement, grace, allowance, and contribution level",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/me/preferences": {
+      "patch": {
+        "operationId": "patchMyPreferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPreferencesPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPreferencesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Update authenticated user UI language preference",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/me/uploads": {
+      "get": {
+        "operationId": "getMyUploads",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyUploadsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          }
+        },
+        "summary": "List authenticated user's My Tracks submissions with entitlement and level",
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/api/network/edges": {
+      "get": {
+        "operationId": "getNetworkEdges",
+        "parameters": [
+          {
+            "description": "Viewport bounding box formatted as min_lng,min_lat,max_lng,max_lat",
+            "in": "query",
+            "name": "bbox",
+            "required": true,
+            "schema": {
+              "description": "Viewport bounding box formatted as min_lng,min_lat,max_lng,max_lat",
+              "title": "Bbox",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Current map zoom level",
+            "in": "query",
+            "name": "zoom",
+            "required": true,
+            "schema": {
+              "description": "Current map zoom level",
+              "maximum": 22,
+              "minimum": 1,
+              "title": "Zoom",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkEdgesViewportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          }
+        },
+        "summary": "Fetch ACTIVE selectable network edges inside a validated viewport",
+        "tags": [
+          "network"
+        ]
+      }
+    },
+    "/api/network/edges/{id}/rating": {
+      "get": {
+        "operationId": "getEdgeRating",
+        "parameters": [
+          {
+            "description": "Stable ACTIVE trail network edge ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Stable ACTIVE trail network edge ID",
+              "minimum": 1,
+              "title": "Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRatingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Requested resource was not found."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Fetch effective edge difficulty, report count, and caller's own rating",
+        "tags": [
+          "network"
+        ]
+      },
+      "put": {
+        "operationId": "putEdgeRating",
+        "parameters": [
+          {
+            "description": "Stable ACTIVE trail network edge ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Stable ACTIVE trail network edge ID",
+              "minimum": 1,
+              "title": "Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EdgeRatingPutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeRatingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Requested resource was not found."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          }
+        },
+        "summary": "Upsert caller's explicit difficulty rating (1..3) for an ACTIVE edge",
+        "tags": [
+          "network"
+        ]
+      }
+    },
+    "/api/routes": {
+      "post": {
+        "operationId": "createRoute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RouteCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current resource or idempotency state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Dependent service temporarily unavailable."
+          }
+        },
+        "summary": "Calculate a continuity-verified hybrid off-road route",
+        "tags": [
+          "routes"
+        ]
+      }
+    },
+    "/api/uploads/validate": {
+      "post": {
+        "operationId": "validateUpload",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "description": "Untrusted GPX track file payload.",
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadValidateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current resource or idempotency state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Dependent service temporarily unavailable."
+          }
+        },
+        "summary": "Validate a GPX track upload, durably persist it, and create a DRAFT",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/api/uploads/{id}": {
+      "delete": {
+        "operationId": "deleteUploadDraft",
+        "parameters": [
+          {
+            "description": "Draft upload UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Draft upload UUID",
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Requested resource was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current resource or idempotency state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Cancel and delete a DRAFT upload",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/api/uploads/{id}/confirm": {
+      "post": {
+        "operationId": "confirmUpload",
+        "parameters": [
+          {
+            "description": "Draft upload UUID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "Draft upload UUID",
+              "format": "uuid",
+              "title": "Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Client-generated idempotency key bound to payload fingerprint",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "description": "Client-generated idempotency key bound to payload fingerprint",
+              "maxLength": 255,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadConfirmResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required or session invalid."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Authenticated caller is not authorized or not entitled."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Requested resource was not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict with current resource or idempotency state."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Rate limit or quota exceeded."
+          }
+        },
+        "summary": "Confirm a validated DRAFT upload with overall difficulty and Idempotency-Key",
+        "tags": [
+          "uploads"
+        ]
+      }
+    }
+  }
+}
