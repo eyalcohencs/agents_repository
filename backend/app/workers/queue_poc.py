@@ -24,16 +24,18 @@ import math
 import os
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import Any, Literal, LiteralString, cast
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import procrastinate
+import psycopg
 from procrastinate import connector as procrastinate_connector
+from procrastinate import exceptions as procrastinate_exceptions
 from procrastinate import schema as procrastinate_schema
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -300,28 +302,33 @@ def to_psycopg_dsn(database_url: str) -> str:
     return urlunsplit((scheme, parts.netloc, parts.path, parts.query, parts.fragment))
 
 
+def _wrap_psycopg_value(value: Any) -> Any:
+    """Recursively adapt Python dicts inside tuples/lists to PostgreSQL JSONB for psycopg v3."""
+    if isinstance(value, dict):
+        return Jsonb(value)
+    if isinstance(value, list):
+        return [_wrap_psycopg_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_wrap_psycopg_value(item) for item in value)
+    return value
+
+
 def _adapt_psycopg_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Adapt Python mapping values as PostgreSQL JSONB for psycopg v3 parameterized queries."""
-    adapted: dict[str, Any] = {}
-    for key, value in arguments.items():
-        if isinstance(value, dict):
-            adapted[key] = Jsonb(value)
-        elif isinstance(value, list) and any(isinstance(item, dict) for item in value):
-            adapted[key] = [Jsonb(item) if isinstance(item, dict) else item for item in value]
-        else:
-            adapted[key] = value
-    return adapted
+    """Adapt mapping arguments identically to Procrastinate's SyncPsycopgConnector."""
+    return {key: _wrap_psycopg_value(value) for key, value in arguments.items()}
 
 
-if TYPE_CHECKING:
+def _extract_driver_connection(session: Session) -> Any:
+    """Extract the underlying psycopg v3 connection from an active SQLAlchemy 2 Session."""
+    sa_conn = session.connection()
+    raw_conn = sa_conn.connection
+    driver_conn = getattr(raw_conn, "driver_connection", None)
+    if driver_conn is None:
+        driver_conn = getattr(raw_conn, "dbapi_connection", raw_conn)
+    return driver_conn
 
-    class _ProcrastinateBaseConnector:
-        pass
-else:
-    _ProcrastinateBaseConnector = procrastinate_connector.BaseConnector
 
-
-class SqlAlchemySessionConnector(_ProcrastinateBaseConnector):
+class SqlAlchemySessionConnector(procrastinate_connector.BaseConnector):
     """Thin Procrastinate sync connector sharing an active SQLAlchemy 2 psycopg v3 transaction.
 
     Every query executes directly on `session.connection().connection.driver_connection` so
@@ -348,53 +355,110 @@ class SqlAlchemySessionConnector(_ProcrastinateBaseConnector):
         return None
 
     def _driver_connection(self) -> Any:
-        sa_conn = self._session.connection()
-        raw_conn = sa_conn.connection
-        driver_conn = getattr(raw_conn, "driver_connection", None)
-        if driver_conn is None:
-            driver_conn = getattr(raw_conn, "dbapi_connection", raw_conn)
-        return driver_conn
+        return _extract_driver_connection(self._session)
 
-    def execute_query(self, query: str, **arguments: Any) -> None:
-        driver_conn = self._driver_connection()
+    def _execute_on_conn(
+        self,
+        driver_conn: Any,
+        query: LiteralString,
+        arguments: dict[str, Any],
+        *,
+        fetch: Literal["none", "one", "all"],
+    ) -> Any:
         params = _adapt_psycopg_arguments(arguments)
-        with driver_conn.cursor() as cursor:
-            cursor.execute(query, params or None)
+        try:
+            with driver_conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(query, params or None)
+                if fetch == "none":
+                    return None
+                if fetch == "one":
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise procrastinate_exceptions.NoResult
+                    return dict(row)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except psycopg.errors.UniqueViolation as exc:
+            raise procrastinate_exceptions.UniqueViolation.from_detail(
+                exc.diag.message_detail,
+                constraint_name=exc.diag.constraint_name,
+            ) from exc
+        except psycopg.Error as exc:
+            raise procrastinate_exceptions.ConnectorException from exc
 
-    def execute_query_one(self, query: str, **arguments: Any) -> dict[str, Any]:
-        driver_conn = self._driver_connection()
-        params = _adapt_psycopg_arguments(arguments)
-        with driver_conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(query, params or None)
-            row = cursor.fetchone()
-            return dict(row) if row is not None else {}
+    def execute_query(self, query: LiteralString, **arguments: Any) -> None:
+        self._execute_on_conn(self._driver_connection(), query, arguments, fetch="none")
 
-    def execute_query_all(self, query: str, **arguments: Any) -> list[dict[str, Any]]:
-        driver_conn = self._driver_connection()
-        params = _adapt_psycopg_arguments(arguments)
-        with driver_conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(query, params or None)
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+    def execute_query_one(self, query: LiteralString, **arguments: Any) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            self._execute_on_conn(self._driver_connection(), query, arguments, fetch="one"),
+        )
 
-    async def execute_query_async(self, query: str, **arguments: Any) -> None:
+    def execute_query_all(self, query: LiteralString, **arguments: Any) -> list[dict[str, Any]]:
+        return cast(
+            list[dict[str, Any]],
+            self._execute_on_conn(self._driver_connection(), query, arguments, fetch="all"),
+        )
+
+    def execute_query_one_with_connection(
+        self,
+        connection: Any,
+        query: LiteralString,
+        **arguments: Any,
+    ) -> dict[str, Any]:
+        return cast(
+            dict[str, Any],
+            self._execute_on_conn(connection, query, arguments, fetch="one"),
+        )
+
+    def execute_query_all_with_connection(
+        self,
+        connection: Any,
+        query: LiteralString,
+        **arguments: Any,
+    ) -> list[dict[str, Any]]:
+        return cast(
+            list[dict[str, Any]],
+            self._execute_on_conn(connection, query, arguments, fetch="all"),
+        )
+
+    async def execute_query_async(self, query: LiteralString, **arguments: Any) -> None:
         self.execute_query(query, **arguments)
 
-    async def execute_query_one_async(self, query: str, **arguments: Any) -> dict[str, Any]:
+    async def execute_query_one_async(
+        self, query: LiteralString, **arguments: Any
+    ) -> dict[str, Any]:
         return self.execute_query_one(query, **arguments)
 
-    async def execute_query_all_async(self, query: str, **arguments: Any) -> list[dict[str, Any]]:
+    async def execute_query_all_async(
+        self, query: LiteralString, **arguments: Any
+    ) -> list[dict[str, Any]]:
         return self.execute_query_all(query, **arguments)
+
+    async def execute_query_one_async_with_connection(
+        self,
+        connection: Any,
+        query: LiteralString,
+        **arguments: Any,
+    ) -> dict[str, Any]:
+        return self.execute_query_one_with_connection(connection, query, **arguments)
+
+    async def execute_query_all_async_with_connection(
+        self,
+        connection: Any,
+        query: LiteralString,
+        **arguments: Any,
+    ) -> list[dict[str, Any]]:
+        return self.execute_query_all_with_connection(connection, query, **arguments)
 
     async def listen_notify(
         self,
-        on_notification: Callable[[Any], Any],
-        channels: list[str],
+        on_notification: procrastinate_connector.Notify,
+        channels: Iterable[str],
     ) -> None:
-        raise NotImplementedError(
-            "SqlAlchemySessionConnector supports transactional deferral only; "
-            "use PsycopgConnector for Procrastinate workers."
-        )
+        _ = (on_notification, channels)
+        raise procrastinate_exceptions.SyncConnectorConfigurationError
 
 
 def apply_queue_poc_schema(engine: Engine) -> None:
@@ -431,14 +495,21 @@ def enqueue_upload_job_in_session(
     queueing_lock: str | None = None,
     scheduled_at: datetime | None = None,
 ) -> int:
-    """Defer a real Procrastinate job inside the caller's active SQLAlchemy transaction."""
-    tx_connector = SqlAlchemySessionConnector(session)
-    app = procrastinate.App(connector=tx_connector)
+    """Defer a real Procrastinate job inside the caller's active SQLAlchemy transaction.
+
+    Uses Procrastinate 3's native `SyncPsycopgConnector` passing SQLAlchemy's underlying
+    psycopg v3 `driver_connection` directly (`connection=driver_conn`) so deferral runs
+    inside the exact active SQLAlchemy transaction (`pg_current_xact_id()`) without opening
+    a separate pool or connection.
+    """
+    driver_conn = _extract_driver_connection(session)
+    app = procrastinate.App(connector=procrastinate.SyncPsycopgConnector())
     configure_kwargs: dict[str, Any] = {
         "queue": queue_name,
         "priority": priority,
         "lock": lock,
         "queueing_lock": queueing_lock,
+        "connection": driver_conn,
     }
     if scheduled_at is not None:
         configure_kwargs["schedule_at"] = scheduled_at
@@ -1069,24 +1140,6 @@ def mark_upload_technical_failed(
     )
 
 
-def _has_active_procrastinate_job(session: Session, upload_id: UUID) -> bool:
-    exists: Any = session.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM procrastinate_jobs
-                WHERE task_name = :task_name
-                  AND status IN ('todo', 'doing')
-                  AND args->>'upload_id' = :upload_id_str
-            )
-            """
-        ),
-        {"task_name": INGEST_UPLOAD_TASK_NAME, "upload_id_str": str(upload_id)},
-    ).scalar_one()
-    return bool(exists)
-
-
 def reconcile_stalled_and_orphaned(
     session: Session,
     *,
@@ -1210,13 +1263,17 @@ def reconcile_stalled_and_orphaned(
                 ).scalar_one()
             )
             if not has_todo:
-                job_id = enqueue_upload_job_in_session(
-                    session,
-                    uid,
-                    queue_name=queue_name,
-                    queueing_lock=f"upload:{uid}",
-                )
-                reenqueued_job_ids.append(job_id)
+                try:
+                    with session.begin_nested():
+                        job_id = enqueue_upload_job_in_session(
+                            session,
+                            uid,
+                            queue_name=queue_name,
+                            queueing_lock=f"upload:{uid}",
+                        )
+                    reenqueued_job_ids.append(job_id)
+                except procrastinate_exceptions.AlreadyEnqueued:
+                    pass
 
     orphan_rows = session.execute(
         text(
@@ -1230,8 +1287,11 @@ def reconcile_stalled_and_orphaned(
                   SELECT 1
                   FROM procrastinate_jobs AS j
                   WHERE j.task_name = :task_name
-                    AND j.status IN ('todo', 'doing')
                     AND j.args->>'upload_id' = u.id::text
+                    AND (
+                        j.status = 'todo'
+                        OR (u.status = 'PENDING' AND j.status = 'doing')
+                    )
               )
             ORDER BY u.created_at ASC
             FOR UPDATE SKIP LOCKED
@@ -1247,16 +1307,18 @@ def reconcile_stalled_and_orphaned(
         uid = UUID(str(row["id"]))
         if uid in handled_ids:
             continue
-        if _has_active_procrastinate_job(session, uid):
+        try:
+            with session.begin_nested():
+                job_id = enqueue_upload_job_in_session(
+                    session,
+                    uid,
+                    queue_name=queue_name,
+                    queueing_lock=f"upload:{uid}",
+                )
+            reenqueued_orphans.append(uid)
+            reenqueued_job_ids.append(job_id)
+        except procrastinate_exceptions.AlreadyEnqueued:
             continue
-        job_id = enqueue_upload_job_in_session(
-            session,
-            uid,
-            queue_name=queue_name,
-            queueing_lock=f"upload:{uid}",
-        )
-        reenqueued_orphans.append(uid)
-        reenqueued_job_ids.append(job_id)
 
     return ReconcileResult(
         reclaimed_to_retry=tuple(reclaimed_to_retry),
@@ -1461,15 +1523,15 @@ def build_procrastinate_app(
 async def _get_stalled_jobs_async(
     database_url: str,
     *,
-    seconds_since_heartbeat: int,
+    seconds_since_heartbeat: float,
     queue: str | None = None,
 ) -> list[int]:
     dsn = to_psycopg_dsn(database_url)
     app = procrastinate.App(connector=procrastinate.PsycopgConnector(conninfo=dsn))
     async with app.open_async():
         stalled = await app.job_manager.get_stalled_jobs(
-            nb_seconds=seconds_since_heartbeat,
             queue=queue,
+            seconds_since_heartbeat=seconds_since_heartbeat,
         )
         return [int(job.id) for job in stalled if job.id is not None]
 
@@ -1477,14 +1539,57 @@ async def _get_stalled_jobs_async(
 def inspect_procrastinate_stalled_jobs(
     database_url: str,
     *,
-    seconds_since_heartbeat: int = 30,
+    seconds_since_heartbeat: float = 30.0,
     queue: str | None = None,
 ) -> list[int]:
-    """Query Procrastinate's built-in stalled-job detection (`JobManager.get_stalled_jobs`)."""
-    if seconds_since_heartbeat < 0:
-        raise ValueError("seconds_since_heartbeat must be non-negative.")
+    """Query Procrastinate's built-in heartbeat-based stalled-job detection."""
+    if not math.isfinite(seconds_since_heartbeat) or seconds_since_heartbeat < 0:
+        raise ValueError("seconds_since_heartbeat must be a finite non-negative number.")
     return asyncio.run(
         _get_stalled_jobs_async(
+            database_url,
+            seconds_since_heartbeat=seconds_since_heartbeat,
+            queue=queue,
+        )
+    )
+
+
+async def _retry_stalled_jobs_async(
+    database_url: str,
+    *,
+    seconds_since_heartbeat: float,
+    queue: str | None = None,
+) -> list[int]:
+    dsn = to_psycopg_dsn(database_url)
+    app = procrastinate.App(connector=procrastinate.PsycopgConnector(conninfo=dsn))
+    retried: list[int] = []
+    async with app.open_async():
+        stalled = await app.job_manager.get_stalled_jobs(
+            queue=queue,
+            seconds_since_heartbeat=seconds_since_heartbeat,
+        )
+        retry_at = datetime.now(tz=UTC)
+        for job in stalled:
+            if job.id is not None:
+                await app.job_manager.retry_job_by_id_async(
+                    job_id=job.id,
+                    retry_at=retry_at,
+                )
+                retried.append(int(job.id))
+    return retried
+
+
+def retry_stalled_procrastinate_jobs(
+    database_url: str,
+    *,
+    seconds_since_heartbeat: float = 30.0,
+    queue: str | None = None,
+) -> list[int]:
+    """Retry Procrastinate jobs whose worker heartbeat expired past `seconds_since_heartbeat`."""
+    if not math.isfinite(seconds_since_heartbeat) or seconds_since_heartbeat < 0:
+        raise ValueError("seconds_since_heartbeat must be a finite non-negative number.")
+    return asyncio.run(
+        _retry_stalled_jobs_async(
             database_url,
             seconds_since_heartbeat=seconds_since_heartbeat,
             queue=queue,
@@ -1683,12 +1788,14 @@ def main(argv: list[str] | None = None) -> int:
         enable_heartbeat=not args.no_heartbeat,
         ready_file=ready_path,
     )
-    with app.open():
-        app.run_worker(
-            queues=[cfg.queue_name],
-            wait=not args.one_shot,
-            install_signal_handlers=True,
-        )
+    app.run_worker(
+        queues=[cfg.queue_name],
+        wait=not args.one_shot,
+        fetch_job_polling_interval=min(cfg.heartbeat_interval_s, 0.5),
+        update_heartbeat_interval=min(cfg.heartbeat_interval_s, 10.0),
+        stalled_worker_timeout=cfg.lease_duration_s,
+        install_signal_handlers=True,
+    )
     return 0
 
 
