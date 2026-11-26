@@ -386,3 +386,39 @@ Executed live against `pgrouting/pgrouting:16-3.5-3.7` across `DEFAULT_SCALE_SPE
   - Add batch `LIMIT` to `reconcile_stalled_and_orphaned`, query indexed `queueing_lock` instead of `args->>'upload_id'`, cap `retry_delay_s` exponent, mirror `bool` rejection on duration helper args, and catch `Exception` (not `BaseException`) with sanitized error logging in `LeaseHeartbeatRunner._run`.
   - Optionally wrap `--one-shot` test worker subprocesses in `try/finally` kill guards on timeout.
 - **Batch 3 Escalation / Strikes Log:** `dev-contracts`: `0/2`; `dev-queue`: `1/2` (resolved in `a31f84d`); `dev-config`: `0/2`; debugger escalations: `0`.
+
+---
+
+## Batch 4: Production Schema & API Contracts (`T-008` & `T-009`)
+
+### `T-008` Verification (Final Production Database Schema & Alembic `0002_production_schema`)
+
+**QA Engineer:** `qa-engineer`  
+**Verified Dev Commit:** `9915c82` (`swarm-dev-schema-b1eb3513`)
+
+#### 1. Audit & Ownership Compliance
+- Audited `0002_production_schema.py`, `app/core/models.py`, `app/configuration/models.py`, `app/configuration/__init__.py`, and `tests/unit/test_models.py` against `docs/ARCHITECTURE.md` §7, `docs/PRD.md` §10.1, `docs/TASKS.md` (`T-008`), and the Batch 4 Blueprint (`#3`).
+- Verified **zero edits** to unowned files (`backend/alembic/env.py`, `backend/app/core/db.py`, `backend/alembic/versions/0001_poc_foundation.py`, `backend/app/workers/queue_poc.py`).
+- Verified minimal authorized test coordination pinning `0001`-only tests in `tests/integration/test_foundation.py` and `tests/poc/test_queue_poc.py` to `"0001_poc_foundation"`.
+
+#### 2. Verification Results
+
+| Check | Command | Result | Details |
+|---|---|---|---|
+| Backend Lint | `backend/.venv/bin/ruff check .` | **PASS** | `All checks passed!` (0 errors) |
+| Backend Typecheck (`strict=true`) | `backend/.venv/bin/mypy app alembic/versions/0002_production_schema.py tests/unit/test_models.py tests/integration/test_production_schema.py` | **PASS** | `Success: no issues found in 40 source files` |
+| Alembic CLI Heads Check | `backend/.venv/bin/python -W error::DeprecationWarning -m alembic heads` | **PASS** | `0002_production_schema (head)` (0 deprecation warnings) |
+| Backend Unit Tests | `backend/.venv/bin/pytest tests/unit -v` | **PASS** | **`256 passed in 1.43s`** |
+| Live PostGIS/pgRouting Testcontainers Suite | `PYTHONPATH=. backend/.venv/bin/pytest -v -m integration tests/integration/test_production_schema.py tests/integration/test_foundation.py tests/poc/test_queue_poc.py tests/poc/test_snapping_poc.py tests/poc/test_routing_poc.py` | **PASS** | **`33 passed, 92 deselected in 43.88s`** against `pgrouting/pgrouting:16-3.5-3.7` (`8` `test_production_schema.py` + `4` `test_foundation.py` + `9` `test_queue_poc.py` + `5` `test_snapping_poc.py` + `7` `test_routing_poc.py`) |
+
+#### 3. Live Testcontainers Coverage (`backend/tests/integration/test_production_schema.py`, 8/8 PASS)
+- **Full Alembic Lifecycle:** `upgrade head` → `downgrade 0001_poc_foundation` → `downgrade base` → `upgrade head`; verified zero leftover 0002 tables, `edge_difficulty` view, 18 Procrastinate functions, or 4 Procrastinate types after downgrade to `0001`, exact restoration of `uploads` columns/indexes, and clean re-upgrade restoring PostGIS, pgRouting, `graph_metadata(1, 0)`, and all 5 `app_config` defaults.
+- **Constraints, FKs & Partial Unique Indexes:** Verified `users` (`preferred_language` default `'he'`, case-insensitive `uq_users_email_lower`, `user_type` checks), `sessions` (`expires_at > created_at`, unique `session_id`, user `CASCADE`), `app_config` (all 5 Gate 1 / T-007 defaults: `MIN_REQUIRED_TRACKS=1`, `FREE_ROUTE_CREATIONS=0`, `REJECTED_TRACK_GRACE_PERIOD_HOURS=24`, `POINT_SIMPLIFICATION_DISTANCE_M=20.0`, `NODE_SNAP_RADIUS_M=20.0`; `updated_by ON DELETE SET NULL`), `uploads` (`user_id NOT NULL`, `uq_uploads_user_credit_fingerprint` blocking duplicate credit-bearing statuses while allowing same-user `DRAFT`/`REJECTED` and cross-user duplicates), `upload_segments` (`CASCADE`, unique index), `batch_imports`, `batch_files`, `ingestion_runs` (`ck_ingestion_runs_source_ref` XOR + partial uniques `upload_id`/`batch_file_id`), `edge_contributions` (multi-run provenance + cascade), `route_usage`, and `idempotency_records` (`key` length `1..255` + cascade).
+- **`edge_ratings` & `edge_difficulty` View (`AC-33`/`AC-34`):** Verified 0-rating `report_count = 0` with `initial_difficulty` fallback, exclusion of `initial_difficulty` once explicit ratings exist, exact display rounding boundaries (`1.333 -> 1`, `1.5 -> 2`, `2.0 -> 2`, `2.333 -> 2`, `2.5 -> 3`, `3.0 -> 3`), and live re-rating updates.
+- **Procrastinate 3 Native Schema:** Verified live same-connection transactional deferral (commit visibility atomicity + post-deferral rollback atomicity) directly on the Alembic `0002`-migrated database.
+- **ORM CRUD Round-Trip:** Verified live SQLAlchemy 2.0 + GeoAlchemy2 create/read/update round-trip across all 16 domain models (`app.core.models` + `app.configuration.models`) plus `edge_difficulty_view`.
+- **POC Head Compatibility:** Confirmed `test_snapping_poc.py` (5/5) and `test_routing_poc.py` (7/7) pass cleanly against Alembic `head` (`0002_production_schema`).
+
+#### 4. Defect & Strike Log (`T-008`)
+- **Strike 1/2 (`#7`, resolved in `9915c82` `#8`):** `alembic upgrade head` failed on live PostgreSQL + `psycopg` v3 at `0002_production_schema.py:439` (`psycopg.ProgrammingError: only '%s', '%b', '%t' are allowed as placeholders, got '%)'`) because `bind.exec_driver_sql()` passed an empty param dict triggering `%` placeholder parsing on Procrastinate's PL/pgSQL DDL. Fixed by escaping `%` -> `%%` prior to `exec_driver_sql(...)` with a unit regression test; verified green across all 33 live Testcontainers tests.
+- **Strikes Used:** `dev-schema`: `1/2`; debugger escalations: `0`.
