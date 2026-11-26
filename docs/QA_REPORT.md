@@ -422,3 +422,40 @@ Executed live against `pgrouting/pgrouting:16-3.5-3.7` across `DEFAULT_SCALE_SPE
 #### 4. Defect & Strike Log (`T-008`)
 - **Strike 1/2 (`#7`, resolved in `9915c82` `#8`):** `alembic upgrade head` failed on live PostgreSQL + `psycopg` v3 at `0002_production_schema.py:439` (`psycopg.ProgrammingError: only '%s', '%b', '%t' are allowed as placeholders, got '%)'`) because `bind.exec_driver_sql()` passed an empty param dict triggering `%` placeholder parsing on Procrastinate's PL/pgSQL DDL. Fixed by escaping `%` -> `%%` prior to `exec_driver_sql(...)` with a unit regression test; verified green across all 33 live Testcontainers tests.
 - **Strikes Used:** `dev-schema`: `1/2`; debugger escalations: `0`.
+
+---
+
+### `T-009` Verification (Contract Checkpoint, Frozen OpenAPI 3.1 Spec & Offline Angular Client)
+
+**QA Engineer:** `qa-engineer`  
+**Verified Dev Commit:** `722ced8` (`swarm-dev-contracts-f208e339`)
+
+#### 1. Audit & Ownership Compliance
+- Audited all 23 files in `722ced8` against `#3`, `docs/ARCHITECTURE.md` §8, `docs/SPEC.md`, and `docs/TASKS.md` (`T-009`).
+- Verified **strict file ownership**: every changed/added file lives inside `backend/app/contracts/`, `backend/openapi.json`, `frontend/src/app/api-client/`, `frontend/src/app/shared/contracts/`, `backend/tests/unit/test_contracts.py`, and the authorized single root `__all__` assertion update in `backend/tests/unit/test_provisional_contracts.py`. Zero edits to `backend/app/main.py`, `frontend/src/app/app.config.ts`, `frontend/src/app/app.routes.ts`, `frontend/src/app/core/`, `frontend/package.json`, or any `T-008` files.
+
+#### 2. Verification Results (100% Offline)
+
+| Check | Command | Result | Details |
+|---|---|---|---|
+| Backend Lint | `backend/.venv/bin/ruff check .` | **PASS** | `All checks passed!` (0 errors) |
+| Backend Typecheck (`strict=true`) | `backend/.venv/bin/mypy app tests/unit/test_contracts.py tests/unit/test_provisional_contracts.py` | **PASS** | `Success: no issues found in 45 source files` |
+| Codegen Drift Check | `backend/.venv/bin/python -m app.contracts.codegen --check` | **PASS** | Exit 0 — zero drift across `backend/openapi.json` and `frontend/src/app/api-client/{models.ts,api-client.service.ts,index.ts}` |
+| Backend Non-Integration Suite | `backend/.venv/bin/pytest -m "not integration" -v` | **PASS** | **`413 passed, 33 deselected in 12.20s`** (includes 65 frozen contract/OpenAPI/codegen tests in `test_contracts.py` + 110 provisional compatibility tests) |
+| Frontend Lint | `npm run lint` (`eslint .`) | **PASS** | 0 errors |
+| Frontend Typecheck | `npm run typecheck` (`tsc --noEmit`) | **PASS** | 0 errors |
+| Frontend Unit Tests | `npm test` (`vitest run`) | **PASS** | **`35 passed (35)`** across 3 files (`24` `api-client.service.spec.ts`, `7` `contracts.spec.ts`, `4` `app.component.spec.ts`) |
+| Frontend Production Build | `CI=true NG_CLI_ANALYTICS=false npm run build` | **PASS** | `dist/ontrack/browser/index.html` generated cleanly (Initial total `226.00 kB`, est. transfer `63.49 kB` in `5.736s`) |
+
+#### 3. Independent QA Edge-Case Coverage Added
+- **Backend (`backend/tests/unit/test_contracts.py`, +10 tests):**
+  - OpenAPI `3.1.*` version check, exhaustive `$ref` resolution across the entire document (zero dangling schema references), and `Idempotency-Key` header schema alignment (`minLength: 1`, `maxLength: 255`, matching `T-008` `idempotency_records.key` constraint).
+  - Negative drift detection for `python -m app.contracts.codegen --check` (verifying non-zero exit `1` when a generated file is mutated or deleted).
+  - Full frozen `derive_contribution_level` boundary matrix (`0, 5, 6, 9, 10, 19, 20, 50`) plus invalid `-1`/`bool` rejection.
+  - Auth/config hardening edge cases: `LoginRequest` whitespace-only username & extra-field rejection, `RegisterRequest` extra-field (`user_type`) privilege-escalation rejection, `AdminConfigUpdateRequest` exact lower bounds (`free_route_creations=0`, `rejected_track_grace_period_hours=0.0`) & invalid `0`/negative/`bool`/`NaN`/`Inf` rejections, and frozen `AdminUserSchema` `AC-42` redaction of `password_hash`/`created_at`.
+- **Frontend (`api-client.service.spec.ts` & `contracts.spec.ts`):**
+  - `OnTrackApiClient` edge cases: omitting `undefined`/`null` optional search params (`lang`, `limit`), `validateUpload(blob)` without explicit filename, `If-None-Match` in body mode, `observe: 'response'` without `If-None-Match`, and `encodeURIComponent` encoding of special characters in path parameters.
+  - `shared/contracts` edge cases: `difficultyToDisplayLevel(-Infinity)` rejection, `errorCodeToI18nKey` whitespace trimming and lowercase fallback, `QUALITY_RULE_FAILED` + all 4 contribution level keys, `MOCK_ADMIN_USERS_RESPONSE` `AC-42` redaction (`password_hash`/`created_at` absent), and Gate 1 `MOCK_ENTITLEMENT_DENIED_RESPONSE` (`free_allowance_limit === 0`).
+
+#### 4. Defect & Strike Log (`T-009`)
+- Zero blocking bugs found; `dev-contracts` strikes used: `0/2`; debugger escalations: `0`.

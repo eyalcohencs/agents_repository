@@ -16,6 +16,7 @@ import {
   MOCK_ADMIN_NETWORK_EDGES_GEOJSON_RESPONSE,
   MOCK_ADMIN_NETWORK_NODES_GEOJSON_RESPONSE,
   MOCK_ADMIN_USERS_RESPONSE,
+  MOCK_ENTITLEMENT_DENIED_RESPONSE,
   MOCK_LOCATION_SEARCH_RESPONSE_EN,
   MOCK_LOCATION_SEARCH_RESPONSE_HE,
   MOCK_MY_UPLOADS_RESPONSE,
@@ -48,6 +49,8 @@ describe('shared/contracts/i18n.contracts', () => {
   it('maps error, rejection, contribution-level, and difficulty codes to stable i18n keys', () => {
     expect(errorCodeToI18nKey('ROUTE_NOT_ALLOWED')).toBe('shared.errors.ROUTE_NOT_ALLOWED');
     expect(errorCodeToI18nKey('INVALID_CREDENTIALS')).toBe('shared.errors.INVALID_CREDENTIALS');
+    expect(errorCodeToI18nKey('  RATE_LIMITED  ')).toBe('shared.errors.RATE_LIMITED');
+    expect(errorCodeToI18nKey('lowercase_invalid')).toBe('shared.errors.INTERNAL_ERROR');
     expect(errorCodeToI18nKey('')).toBe('shared.errors.INTERNAL_ERROR');
     expect(errorCodeToI18nKey('bad code!')).toBe('shared.errors.INTERNAL_ERROR');
 
@@ -57,8 +60,13 @@ describe('shared/contracts/i18n.contracts', () => {
     expect(rejectionCodeToI18nKey('OUTSIDE_SERVICE_AREA')).toBe(
       'upload.rejections.OUTSIDE_SERVICE_AREA',
     );
+    expect(rejectionCodeToI18nKey('QUALITY_RULE_FAILED')).toBe(
+      'upload.rejections.QUALITY_RULE_FAILED',
+    );
 
     expect(contributionLevelToI18nKey('explorer')).toBe('shared.contributionLevels.explorer');
+    expect(contributionLevelToI18nKey('adventurer')).toBe('shared.contributionLevels.adventurer');
+    expect(contributionLevelToI18nKey('trailblazer')).toBe('shared.contributionLevels.trailblazer');
     expect(contributionLevelToI18nKey('trail_master')).toBe(
       'shared.contributionLevels.trail_master',
     );
@@ -96,7 +104,15 @@ describe('shared/contracts/ui.contracts', () => {
   });
 
   it('rejects out-of-range and non-finite difficulty averages', () => {
-    for (const invalid of [0, 0.99, 3.01, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const invalid of [
+      0,
+      0.99,
+      3.01,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ]) {
       expect(() => difficultyToDisplayLevel(invalid)).toThrow(RangeError);
     }
   });
@@ -142,5 +158,12 @@ describe('shared/contracts/mock-fixtures', () => {
     expect(MOCK_ADMIN_NETWORK_EDGES_GEOJSON_RESPONSE.features[0]?.geometry.type).toBe('LineString');
     expect(MOCK_ADMIN_NETWORK_NODES_GEOJSON_RESPONSE.features[0]?.geometry.type).toBe('Point');
     expect(MOCK_ADMIN_USERS_RESPONSE.users).toHaveLength(2);
+    for (const user of MOCK_ADMIN_USERS_RESPONSE.users) {
+      expect('password_hash' in user).toBe(false);
+      expect('created_at' in user).toBe(false);
+    }
+    expect(MOCK_ENTITLEMENT_DENIED_RESPONSE.allowed).toBe(false);
+    expect(MOCK_ENTITLEMENT_DENIED_RESPONSE.reason).toBe('BELOW_THRESHOLD');
+    expect(MOCK_ENTITLEMENT_DENIED_RESPONSE.free_allowance_limit).toBe(0);
   });
 });

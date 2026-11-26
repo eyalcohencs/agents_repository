@@ -402,3 +402,142 @@ def test_codegen_is_deterministic_and_committed_artifacts_have_zero_drift(tmp_pa
     assert len(written) == 4
     assert check_artifacts(tmp_path) == []
     assert codegen_main(["--check", "--repo-root", str(tmp_path)]) == 0
+
+    # Negative drift test: mutating or deleting a generated file must fail --check with exit 1.
+    models_path = tmp_path / "frontend" / "src" / "app" / "api-client" / "models.ts"
+    original_models = models_path.read_text(encoding="utf-8")
+    models_path.write_text(original_models + "\n// drift\n", encoding="utf-8")
+    assert check_artifacts(tmp_path) == [models_path]
+    assert codegen_main(["--check", "--repo-root", str(tmp_path)]) == 1
+
+    models_path.unlink()
+    assert check_artifacts(tmp_path) == [models_path]
+    assert codegen_main(["--check", "--repo-root", str(tmp_path)]) == 1
+
+
+# ---------------------------------------------------------------------------
+# 5. QA Independent Edge-Case Coverage (OpenAPI $refs, bounds, boundaries)
+# ---------------------------------------------------------------------------
+
+
+def test_qa_openapi_31_zero_dangling_refs_and_header_bounds() -> None:
+    schema = export_openapi_schema()
+    assert schema["openapi"].startswith("3.1.")
+
+    component_schemas = set(schema["components"]["schemas"].keys())
+    referenced: set[str] = set()
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str):
+                assert ref.startswith("#/components/schemas/"), f"Unexpected $ref target: {ref}"
+                referenced.add(ref.removeprefix("#/components/schemas/"))
+            for val in node.values():
+                _walk(val)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    _walk(schema)
+    missing = referenced - component_schemas
+    assert missing == set(), f"Dangling $ref schemas: {missing}"
+
+    # Idempotency-Key header schema must align with T-008 DB key length 1..255.
+    confirm_op = schema["paths"]["/api/uploads/{id}/confirm"]["post"]
+    idem_param = next(
+        p
+        for p in confirm_op["parameters"]
+        if p["in"] == "header" and p["name"] == "Idempotency-Key"
+    )
+    assert idem_param["schema"]["minLength"] == 1
+    assert idem_param["schema"]["maxLength"] == 255
+
+
+@pytest.mark.parametrize(
+    ("active_count", "expected_level", "expected_badge", "expected_next", "expected_remaining"),
+    [
+        (0, "Explorer", "explorer", "Adventurer", 6),
+        (5, "Explorer", "explorer", "Adventurer", 1),
+        (6, "Adventurer", "adventurer", "Trailblazer", 4),
+        (9, "Adventurer", "adventurer", "Trailblazer", 1),
+        (10, "Trailblazer", "trailblazer", "Trail Master", 10),
+        (19, "Trailblazer", "trailblazer", "Trail Master", 1),
+        (20, "Trail Master", "trail_master", None, None),
+        (50, "Trail Master", "trail_master", None, None),
+    ],
+)
+def test_qa_frozen_derive_contribution_level_all_boundaries(
+    active_count: int,
+    expected_level: str,
+    expected_badge: str,
+    expected_next: str | None,
+    expected_remaining: int | None,
+) -> None:
+    info = derive_contribution_level(active_count)
+    assert info.level == expected_level
+    assert info.badge_key.value == expected_badge
+    assert info.active_count == active_count
+    assert info.next_level == expected_next
+    assert info.tracks_to_next == expected_remaining
+
+
+def test_qa_frozen_derive_contribution_level_and_auth_config_edge_rejections() -> None:
+    for invalid_count in (-1, True, False):
+        with pytest.raises(ValueError):
+            derive_contribution_level(invalid_count)
+
+    # LoginRequest rejects whitespace-only username and extra fields.
+    with pytest.raises(ValidationError):
+        LoginRequest.model_validate({"username": "   ", "password": "Pass1!"})
+    with pytest.raises(ValidationError):
+        LoginRequest.model_validate(
+            {"username": "EyalRider", "password": "Pass1!", "role": "admin"}
+        )
+
+    # RegisterRequest rejects extra fields (e.g., privilege escalation via user_type).
+    reg_payload = _valid_register_payload()
+    reg_payload["user_type"] = "system"
+    with pytest.raises(ValidationError):
+        RegisterRequest.model_validate(reg_payload)
+
+    # AdminConfigUpdateRequest accepts exact lower bounds and rejects below-minimum / bool / NaN.
+    at_min = AdminConfigUpdateRequest.model_validate(
+        {
+            "min_required_tracks": 1,
+            "free_route_creations": 0,
+            "point_simplification_distance_m": 0.1,
+            "node_snap_radius_m": 0.1,
+            "rejected_track_grace_period_hours": 0.0,
+        }
+    )
+    assert at_min.free_route_creations == 0
+    assert at_min.rejected_track_grace_period_hours == 0.0
+
+    for field, bad_val in [
+        ("min_required_tracks", 0),
+        ("min_required_tracks", True),
+        ("free_route_creations", -1),
+        ("point_simplification_distance_m", 0.0),
+        ("node_snap_radius_m", float("nan")),
+        ("rejected_track_grace_period_hours", float("inf")),
+    ]:
+        payload = _valid_admin_config_payload()
+        payload[field] = bad_val
+        with pytest.raises(ValidationError):
+            AdminConfigUpdateRequest.model_validate(payload)
+
+    # Frozen AdminUserSchema strictly forbids password_hash / created_at (AC-42).
+    for forbidden_key in ("password_hash", "created_at"):
+        with pytest.raises(ValidationError):
+            contracts.AdminUserSchema.model_validate(
+                {
+                    "id": 1,
+                    "username": "EyalRider",
+                    "first_name": "Eyal",
+                    "last_name": "Cohen",
+                    "email": "eyal@example.com",
+                    "user_type": "regular",
+                    forbidden_key: "redacted",
+                }
+            )

@@ -368,4 +368,36 @@ describe('OnTrackApiClient (all 23 ARCH §8 operations)', () => {
     req.flush(MOCK_BATCH_IMPORT_STATUS_RESPONSE, { status: 202, statusText: 'Accepted' });
     expect(result).toEqual(MOCK_BATCH_IMPORT_STATUS_RESPONSE);
   });
+
+  it('QA edge cases: omits undefined/null search params, supports optional filename, conditional body ETag, and URL-encodes path IDs', () => {
+    client.searchMapLocations({ q: 'Carmel', lang: null }).subscribe();
+    const searchReq = httpTesting.expectOne((r) => r.url === '/api/map/search');
+    expect(searchReq.request.params.get('q')).toBe('Carmel');
+    expect(searchReq.request.params.has('lang')).toBe(false);
+    expect(searchReq.request.params.has('limit')).toBe(false);
+    searchReq.flush(MOCK_LOCATION_SEARCH_RESPONSE_HE);
+
+    const blob = new Blob(['<gpx></gpx>'], { type: 'application/gpx+xml' });
+    client.validateUpload(blob).subscribe();
+    const uploadReq = httpTesting.expectOne('/api/uploads/validate');
+    expect(uploadReq.request.body).toBeInstanceOf(FormData);
+    expect((uploadReq.request.body as FormData).get('file')).toBeTruthy();
+    uploadReq.flush(MOCK_UPLOAD_VALIDATE_RESPONSE);
+
+    client.getAdminNetworkEdges({ ifNoneMatch: '"rev-9"', observe: 'body' }).subscribe();
+    const etagBodyReq = httpTesting.expectOne('/api/admin/network/edges');
+    expect(etagBodyReq.request.headers.get('If-None-Match')).toBe('"rev-9"');
+    expect(etagBodyReq.request.withCredentials).toBe(true);
+    etagBodyReq.flush(MOCK_ADMIN_NETWORK_EDGES_GEOJSON_RESPONSE);
+
+    client.getAdminNetworkNodes({ observe: 'response' }).subscribe();
+    const respNoEtagReq = httpTesting.expectOne('/api/admin/network/nodes');
+    expect(respNoEtagReq.request.headers.has('If-None-Match')).toBe(false);
+    respNoEtagReq.flush(MOCK_ADMIN_NETWORK_NODES_GEOJSON_RESPONSE);
+
+    client.deleteUploadDraft('id/with space').subscribe();
+    const encodedReq = httpTesting.expectOne('/api/uploads/id%2Fwith%20space');
+    expect(encodedReq.request.method).toBe('DELETE');
+    encodedReq.flush(MOCK_UPLOAD_DELETE_RESPONSE);
+  });
 });
