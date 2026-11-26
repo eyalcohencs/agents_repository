@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -1075,12 +1076,16 @@ def mark_upload_retry(
     )
     applied = bool(updated.rowcount == 1)
     if applied and enqueue_retry_job:
-        enqueue_upload_job_in_session(
-            session,
-            upload_id,
-            queue_name=queue_name,
-            queueing_lock=f"upload:{upload_id}",
-        )
+        with (
+            contextlib.suppress(procrastinate_exceptions.AlreadyEnqueued),
+            session.begin_nested(),
+        ):
+            enqueue_upload_job_in_session(
+                session,
+                upload_id,
+                queue_name=queue_name,
+                queueing_lock=f"upload:{upload_id}",
+            )
     return TransitionResult(
         applied=applied,
         upload_id=upload_id,
