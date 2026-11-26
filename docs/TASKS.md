@@ -261,7 +261,7 @@ flowchart TD
   - **POC / Approval Gate:** Technical gate before final production schema (`T-008`)
   - **Definition of Done:** POC results recorded in `docs/QA_REPORT.md`; no unmeasured claims; architecture parameters locked for Phase 3.
 
-- [ ] **T-008: Final Production Database Schema & Alembic Migrations**
+- [x] **T-008: Final Production Database Schema & Alembic Migrations**
   - **Start Dependencies:** `T-000`, `T-007`
   - **Completion Dependencies:** `T-000`, `T-007`
   - **Owned Paths:** `backend/app/core/models.py`, `backend/alembic/versions/0002_production_schema.py`, `backend/app/configuration/models.py`
@@ -271,7 +271,7 @@ flowchart TD
   - **POC / Approval Gate:** Requires `T-000` + `T-007` so schema reflects confirmed policies and POC findings
   - **Definition of Done:** Clean upgrade/downgrade and constraint tests pass on Testcontainers PostGIS/pgRouting.
 
-- [ ] **T-009: [Contract Checkpoint] Freeze Stable API Contracts & Generate Initial Angular Client**
+- [x] **T-009: [Contract Checkpoint] Freeze Stable API Contracts & Generate Initial Angular Client**
   - **Start Dependencies:** `T-000`, `T-006`, `T-008`
   - **Completion Dependencies:** `T-000`, `T-006`, `T-008`
   - **Owned Paths:** `backend/app/contracts/`, `backend/openapi.json`, `frontend/src/app/api-client/`, `frontend/src/app/shared/contracts/`
