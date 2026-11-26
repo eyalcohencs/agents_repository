@@ -209,8 +209,10 @@ def _spawn_worker_subprocess(
 
 @pytest.fixture(scope="module")
 def queue_poc_engine(postgres_db_url: str) -> Generator[Engine, None, None]:
-    """Run Alembic migrations and apply Procrastinate + POC idempotency schema."""
-    command.upgrade(build_alembic_config(postgres_db_url), "head")
+    """Run POC 0001 Alembic migration and apply Procrastinate + POC idempotency schema."""
+    alembic_cfg = build_alembic_config(postgres_db_url)
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0001_poc_foundation")
     engine = create_engine(postgres_db_url, pool_pre_ping=True)
     try:
         apply_queue_poc_schema(engine)
@@ -218,6 +220,11 @@ def queue_poc_engine(postgres_db_url: str) -> Generator[Engine, None, None]:
         apply_queue_poc_schema(engine)
         yield engine
     finally:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS poc_idempotency_records"))
+            conn.execute(
+                text("TRUNCATE TABLE uploads, tracks, edges, nodes RESTART IDENTITY CASCADE")
+            )
         engine.dispose()
 
 

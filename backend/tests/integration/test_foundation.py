@@ -42,7 +42,8 @@ def _existing_foundation_tables(conn: Connection) -> set[str]:
 
 def test_alembic_0001_upgrade_schema_constraints_and_indexes(postgres_db_url: str) -> None:
     alembic_cfg = build_alembic_config(postgres_db_url)
-    command.upgrade(alembic_cfg, "head")
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0001_poc_foundation")
 
     engine = create_engine(postgres_db_url)
     try:
@@ -280,7 +281,8 @@ def test_alembic_0001_upgrade_schema_constraints_and_indexes(postgres_db_url: st
 
 def test_alembic_0001_downgrade_base_and_clean_reupgrade(postgres_db_url: str) -> None:
     alembic_cfg = build_alembic_config(postgres_db_url)
-    command.upgrade(alembic_cfg, "head")
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "0001_poc_foundation")
     command.downgrade(alembic_cfg, "base")
 
     engine = create_engine(postgres_db_url)
@@ -289,8 +291,8 @@ def test_alembic_0001_downgrade_base_and_clean_reupgrade(postgres_db_url: str) -
             assert _existing_foundation_tables(conn) == set()
             assert _installed_extensions(conn) == set()
 
-        # Re-upgrade cleanly from base -> head
-        command.upgrade(alembic_cfg, "head")
+        # Re-upgrade cleanly from base -> 0001_poc_foundation
+        command.upgrade(alembic_cfg, "0001_poc_foundation")
 
         with engine.connect() as conn:
             assert _existing_foundation_tables(conn) == FOUNDATION_TABLES
